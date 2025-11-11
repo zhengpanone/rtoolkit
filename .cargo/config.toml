@@ -1,0 +1,23 @@
+[build]
+# 默认目标（可选设置）
+# target = "x86_64-unknown-linux-gnu"
+
+[target.x86_64-unknown-linux-gnu]
+linker = "x86_64-linux-gnu-gcc"
+
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
+# 对于 Windows MSVC 目标
+[target.x86_64-pc-windows-msvc]
+# 通常不需要特殊配置
+
+# 交叉编译工具链配置
+[env]
+CC_x86_64_unknown_linux_gnu = "x86_64-linux-gnu-gcc"
+CXX_x86_64_unknown_linux_gnu = "x86_64-linux-gnu-g++"
+AR_x86_64_unknown_linux_gnu = "x86_64-linux-gnu-ar"
+
+CC_x86_64_pc_windows_gnu = "x86_64-w64-mingw32-gcc"
+CXX_x86_64_pc_windows_gnu = "x86_64-w64-mingw32-g++"
+AR_x86_64_pc_windows_gnu = "x86_64-w64-mingw32-ar"

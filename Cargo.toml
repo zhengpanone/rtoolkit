@@ -1,0 +1,63 @@
+[package]
+name = "rtoolkit"
+readme = "README.md"
+version = "0.1.0"
+edition = "2021"
+description = "Rust toolkit CLI: generate Chinese ID numbers, emails (TBD), PDF utilities (TBD)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/zhengpanone/rtoolkit"
+keywords = ["cli", "toolkit", "generator", "id"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+tokio = { version = "1.48.0", features = ["full"] }
+chrono = { version = "0.4.42", default-features = false, features = [
+    "alloc",
+    "clock",
+] }
+clap = { version = "4.5.51", features = ["derive"] }
+rand = "0.9.2"
+thiserror = "2.0.17"
+fake = "4.4.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.145"
+csv = "1.4.0"
+anyhow = "1.0.100"
+
+[dev-dependencies]
+reqwest = "0.12.24"
+
+# 跨平台配置
+[package.metadata]
+cross-compile = true
+
+
+[target.'cfg(windows)'.dependencies]
+# Windows 特定依赖（如果有）
+
+[target.'cfg(unix)'.dependencies]
+# Linux/macOS 特定依赖（如果有）
+
+# 构建配置
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"   # 减小二进制大小
+
+# 用于交叉编译的配置
+[package.metadata.cross]
+# Linux 目标配置
+[package.metadata.cross.target.x86_64-unknown-linux-gnu]
+image = "crosscompilers/linux-x64:latest"
+
+# Windows 目标配置  
+[package.metadata.cross.target.x86_64-pc-windows-gnu]
+image = "crosscompilers/windows-x64:latest"
+
+[package.metadata.cross.target.x86_64-pc-windows-msvc]
+image = "crosscompilers/windows-x64:latest"
