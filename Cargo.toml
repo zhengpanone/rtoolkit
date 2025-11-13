@@ -1,7 +1,7 @@
 [package]
 name = "rtoolkit"
 readme = "README.md"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "Rust toolkit CLI: generate Chinese ID numbers, emails (TBD), PDF utilities (TBD)"
 license = "MIT OR Apache-2.0"
