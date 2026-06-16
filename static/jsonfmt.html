@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JSON 格式化 - rtoolkit</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+  <div id="app" class="app" v-cloak>
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>rtoolkit</h1>
+          <p>本地工具工作台</p>
+        </div>
+      </div>
+
+      <nav class="tool-list" aria-label="工具导航">
+        <a class="tool-tab" href="/idgen">
+          <span class="icon">ID</span>
+          <span><strong>身份证生成</strong><span class="hint">测试数据快速生成</span></span>
+        </a>
+        <a class="tool-tab" href="/port-scan">
+          <span class="icon">PS</span>
+          <span><strong>端口扫描</strong><span class="hint">主机端口连通性检查</span></span>
+        </a>
+        <a class="tool-tab active" href="/jsonfmt">
+          <span class="icon">JS</span>
+          <span><strong>JSON 格式化</strong><span class="hint">格式化、压缩和排序</span></span>
+        </a>
+      </nav>
+    </aside>
+
+    <main class="json-page">
+      <div class="topbar">
+        <div>
+          <h2>JSON 格式化</h2>
+          <p class="hint">粘贴 JSON 文本，输出可读格式或压缩后的单行 JSON。</p>
+        </div>
+        <div class="status"><span class="dot"></span><span>服务运行中</span></div>
+      </div>
+
+      <div class="workspace json-workspace">
+        <section class="panel">
+          <div class="panel-head panel-head-row">
+            <div>
+              <strong>输入与选项</strong>
+              <p class="hint">默认保留对象 key 顺序，开启排序后会递归排序。</p>
+            </div>
+            <span class="mode-pill">{{ form.compact ? 'Compact' : 'Pretty' }}</span>
+          </div>
+          <form @submit.prevent="formatJson">
+            <div class="editor-shell">
+              <div class="editor-title">
+                <label for="jsonInput">JSON 输入</label>
+                <span>{{ inputStats }}</span>
+              </div>
+              <textarea id="jsonInput" class="json-editor" v-model="form.input" spellcheck="false"></textarea>
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="jsonIndent">缩进宽度</label>
+                <input id="jsonIndent" v-model.number="form.indent" type="number" min="0" max="16">
+              </div>
+              <div class="field option-field">
+                <label><input v-model="form.sort" type="checkbox"> 按 key 排序</label>
+                <label><input v-model="form.compact" type="checkbox"> 压缩为单行</label>
+              </div>
+            </div>
+            <div class="actions json-actions">
+              <button class="primary" type="submit" :disabled="loading">{{ loading ? '处理中...' : '格式化' }}</button>
+              <button class="secondary" type="button" @click="loadExample">示例</button>
+              <button class="secondary" type="button" @click="clearAll">清空</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head panel-head-row">
+            <div>
+              <strong>输出结果</strong>
+              <p class="hint">格式化后的 JSON 可直接复制到其他地方使用。</p>
+            </div>
+            <button class="primary compact-button" type="button" :disabled="!output" @click="copyResult">{{ copyStatus || '一键复制' }}</button>
+          </div>
+          <div class="summary" v-if="metrics.length">
+            <div class="metric" v-for="item in metrics" :key="item.label">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+          <div class="error" v-if="errorMessage">{{ errorMessage }}</div>
+          <div class="result-body json-result" :class="{ ready: output }">
+            <div class="empty" v-if="loading">正在处理...</div>
+            <div class="empty" v-else-if="!output">运行工具后，结果会显示在这里。</div>
+            <pre v-else>{{ output }}</pre>
+          </div>
+        </section>
+      </div>
+
+      <div class="toast" :class="toastType" v-if="toastMessage">{{ toastMessage }}</div>
+    </main>
+  </div>
+
+  <script src="/jsonfmt.js"></script>
+</body>
+</html>

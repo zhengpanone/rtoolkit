@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::ser::{PrettyFormatter, Serializer};
 use serde_json::Value;
 
-const MAX_INDENT: usize = 16;
+pub const MAX_INDENT: usize = 16;
 
 #[derive(clap::Args)]
 pub struct JsonFmtOpts {
@@ -54,18 +54,28 @@ pub fn run_json_fmt(opts: JsonFmtOpts) -> Result<(), JsonFmtError> {
         (None, None) => None,
     };
     let input = read_json_input(input_source)?;
-    let mut value = parse_json_with_fallback(&input).map_err(|e| {
-        JsonFmtError::InvalidJson(format!("{} at line {}, column {}", e, e.line(), e.column()))
-    })?;
-
-    if opts.sort {
-        sort_object_keys(&mut value);
-    }
-
-    let output = format_json(&value, opts.indent, opts.compact)?;
+    let output = format_json_text(&input, opts.indent, opts.sort, opts.compact)?;
     write_json_output(opts.output.as_ref(), &output)?;
 
     Ok(())
+}
+
+pub fn format_json_text(
+    input: &str,
+    indent: usize,
+    sort: bool,
+    compact: bool,
+) -> Result<String, JsonFmtError> {
+    validate_indent(indent)?;
+    let mut value = parse_json_with_fallback(input).map_err(|e| {
+        JsonFmtError::InvalidJson(format!("{} at line {}, column {}", e, e.line(), e.column()))
+    })?;
+
+    if sort {
+        sort_object_keys(&mut value);
+    }
+
+    format_json(&value, indent, compact)
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -76,6 +86,8 @@ pub enum JsonFmtError {
     InvalidFile(String),
     #[error("cannot use both positional INPUT and -i/--input")]
     InputConflict,
+    #[error("indent must be between 0 and {0}")]
+    InvalidIndent(usize),
     #[error("json serialize failed: {0}")]
     Serialize(String),
 }
@@ -97,10 +109,15 @@ fn parse_indent(value: &str) -> Result<usize, String> {
     let indent = value
         .parse::<usize>()
         .map_err(|_| "indent must be a number".to_string())?;
+    validate_indent(indent).map_err(|error| error.to_string())?;
+    Ok(indent)
+}
+
+fn validate_indent(indent: usize) -> Result<(), JsonFmtError> {
     if indent <= MAX_INDENT {
-        Ok(indent)
+        Ok(())
     } else {
-        Err(format!("indent must be between 0 and {}", MAX_INDENT))
+        Err(JsonFmtError::InvalidIndent(MAX_INDENT))
     }
 }
 

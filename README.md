@@ -219,9 +219,11 @@ Web 前端文件位于：
 static/index.html
 static/idgen.html
 static/port-scan.html
+static/jsonfmt.html
 static/styles.css
 static/idgen.js
 static/port-scan.js
+static/jsonfmt.js
 ```
 
 后端服务入口位于：
@@ -230,7 +232,7 @@ static/port-scan.js
 src/web.rs
 ```
 
-`src/web.rs` 只负责 HTTP 服务、API 路由和静态资源响应。前端页面拆分为 HTML、CSS 和 JS，访问 `/idgen` 进入身份证生成页面，访问 `/port-scan` 进入端口扫描页面。
+`src/web.rs` 只负责 HTTP 服务、API 路由和静态资源响应。前端页面拆分为 HTML、CSS 和 JS，访问 `/idgen` 进入身份证生成页面，访问 `/port-scan` 进入端口扫描页面，访问 `/jsonfmt` 进入 JSON 格式化页面。
 
 ## Web API
 
@@ -357,9 +359,11 @@ rtoolkit/
 │   ├── index.html
 │   ├── idgen.html
 │   ├── port-scan.html
+│   ├── jsonfmt.html
 │   ├── styles.css
 │   ├── idgen.js
-│   └── port-scan.js
+│   ├── port-scan.js
+│   └── jsonfmt.js
 ├── src/
 │   ├── main.rs
 │   ├── lib.rs

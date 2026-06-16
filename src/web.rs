@@ -1,16 +1,19 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::commands::idgen::{generate_ids, IdGenerateRequest};
+use crate::commands::jsonfmt::{format_json_text, MAX_INDENT};
 use crate::commands::portscan::{scan_ports, PortScanRequest};
 
 const INDEX_HTML: &str = include_str!("../static/index.html");
 const IDGEN_HTML: &str = include_str!("../static/idgen.html");
 const PORT_SCAN_HTML: &str = include_str!("../static/port-scan.html");
+const JSONFMT_HTML: &str = include_str!("../static/jsonfmt.html");
 const IDGEN_JS: &str = include_str!("../static/idgen.js");
 const PORT_SCAN_JS: &str = include_str!("../static/port-scan.js");
+const JSONFMT_JS: &str = include_str!("../static/jsonfmt.js");
 const STYLES_CSS: &str = include_str!("../static/styles.css");
 
 #[derive(clap::Args)]
@@ -29,6 +32,21 @@ struct IdGenerateResponse<T> {
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
+}
+
+#[derive(Deserialize)]
+struct JsonFmtRequest {
+    input: String,
+    indent: Option<usize>,
+    sort: Option<bool>,
+    compact: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct JsonFmtResponse {
+    output: String,
+    bytes: usize,
+    lines: usize,
 }
 
 pub fn run_web(opts: WebOpts) -> anyhow::Result<()> {
@@ -100,6 +118,7 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         ("GET", "/port-scan") | ("GET", "/port-scan.html") => {
             write_html(&mut stream, PORT_SCAN_HTML)
         }
+        ("GET", "/jsonfmt") | ("GET", "/jsonfmt.html") => write_html(&mut stream, JSONFMT_HTML),
         ("GET", "/idgen.js") => write_text(
             &mut stream,
             "application/javascript; charset=utf-8",
@@ -109,6 +128,11 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
             &mut stream,
             "application/javascript; charset=utf-8",
             PORT_SCAN_JS,
+        ),
+        ("GET", "/jsonfmt.js") => write_text(
+            &mut stream,
+            "application/javascript; charset=utf-8",
+            JSONFMT_JS,
         ),
         ("GET", "/styles.css") => write_text(&mut stream, "text/css; charset=utf-8", STYLES_CSS),
         ("GET", "/api/health") => {
@@ -132,6 +156,37 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
             let rt = tokio::runtime::Runtime::new()?;
             match rt.block_on(scan_ports(payload)) {
                 Ok(result) => write_json(&mut stream, 200, &result),
+                Err(error) => write_json(
+                    &mut stream,
+                    400,
+                    &ErrorResponse {
+                        error: error.to_string(),
+                    },
+                ),
+            }
+        }
+        ("POST", "/api/jsonfmt") => {
+            let payload: JsonFmtRequest = serde_json::from_slice(&body)?;
+            let indent = payload.indent.unwrap_or(2).min(MAX_INDENT);
+            match format_json_text(
+                &payload.input,
+                indent,
+                payload.sort.unwrap_or(false),
+                payload.compact.unwrap_or(false),
+            ) {
+                Ok(output) => {
+                    let lines = output.lines().count();
+                    let bytes = output.len();
+                    write_json(
+                        &mut stream,
+                        200,
+                        &JsonFmtResponse {
+                            output,
+                            bytes,
+                            lines,
+                        },
+                    )
+                }
                 Err(error) => write_json(
                     &mut stream,
                     400,
