@@ -7,7 +7,49 @@ rtoolkit 是一个用 Rust 编写的本地工具箱，提供命令行和 Web 工
 - 中国大陆身份证测试数据生成
 - TCP 端口扫描
 - JSON 格式化、压缩和排序
+- PDF 信息查看、拆分和合并
 - 本地 Web 页面调用工具
+
+## Feature
+
+核心 feature：
+
+- `idgen`：生成中国大陆身份证测试数据
+- `port-scan`：扫描 TCP 端口
+- `jsonfmt`：格式化、压缩、排序 JSON
+- `pdf`：查看 PDF 信息、拆分和合并
+- `web`：本地 Web 工作台统一入口
+
+可继续扩展的实用 CLI：
+
+- `hash`：计算文件哈希
+- `base64`：编码和解码文本或文件
+- `file-info`：查看文件大小、类型、时间信息
+- `du`：统计目录占用
+- `rename`：批量重命名
+- `url`：URL 编码、解码和 query 解析
+- `uuid`：生成 UUID 或 ULID
+- `csvfmt`：CSV 和 JSON 互转
+- `yamlfmt`：YAML 格式化和互转
+- `tomlfmt`：TOML 格式化
+- `regex`：正则测试和替换
+- `diff`：文本或 JSON 差异对比
+- `http`：轻量 HTTP 请求
+- `dns`：DNS 查询
+- `ping`：TCP ping 或 HTTP ping
+- `whois`：域名 whois 查询
+- `ip`：本机 IP、CIDR 解析
+- `jwt`：解析 JWT
+- `password`：生成随机密码
+- `otp`：TOTP/HOTP 生成或校验
+- `encrypt`：本地文件加解密
+- `cert`：查看证书信息和过期时间
+- `image`：图片压缩、缩放和格式转换
+- `qrcode`：生成和解析二维码
+- `pdf text`：提取 PDF 文本
+- `pdf images`：提取 PDF 图片
+- `pdf rotate`：旋转 PDF 页面
+- `pdf encrypt/decrypt`：PDF 加密和解密
 
 > 生成的身份证信息仅用于测试、开发和演示，不代表真实身份信息，请勿用于非法用途。
 
@@ -45,6 +87,7 @@ rtoolkit --help
 idgen      生成中国身份证号
 port-scan  端口扫描
 jsonfmt    JSON 格式化
+pdf        PDF 处理工具
 web        启动本地 Web 工作台
 ```
 
@@ -186,6 +229,34 @@ rtoolkit jsonfmt -i input.json --compact -o output.json
 ```
 
 命令别名 `json-fmt` 也可使用。
+
+## PDF 处理
+
+查看 PDF 基本信息：
+
+```bash
+rtoolkit pdf info input.pdf
+```
+
+按页拆分 PDF：
+
+```bash
+rtoolkit pdf split input.pdf -o pages
+```
+
+指定拆分后的文件名前缀：
+
+```bash
+rtoolkit pdf split input.pdf -o pages --prefix report
+```
+
+合并多个 PDF：
+
+```bash
+rtoolkit pdf merge a.pdf b.pdf c.pdf -o merged.pdf
+```
+
+当前 PDF 命令使用纯 Rust 依赖处理文件，不需要额外安装系统命令。基础功能适合未加密或普通结构的 PDF；复杂表单、签名、加密 PDF 建议先另存为普通 PDF 后再处理。
 
 ## Web 工作台
 
@@ -372,6 +443,7 @@ rtoolkit/
 │   │   ├── mod.rs
 │   │   ├── idgen.rs
 │   │   ├── jsonfmt.rs
+│   │   ├── pdf.rs
 │   │   └── portscan.rs
 │   └── utils/
 │       ├── mod.rs
@@ -406,6 +478,7 @@ cargo run -- web --port 8080
 cargo run -- idgen -n 3
 cargo run -- port-scan --target 127.0.0.1 --port 80-100
 cargo run -- jsonfmt input.json -o output.json
+cargo run -- pdf info input.pdf
 ```
 
 ## 技术栈
@@ -416,6 +489,7 @@ cargo run -- jsonfmt input.json -o output.json
 - chrono：日期处理
 - rand / fake：测试数据生成
 - serde / serde_json：JSON 序列化与格式化
+- lopdf：PDF 读取、拆分和合并
 - Vue.js：Web 工作台前端页面
 
 ## 许可证

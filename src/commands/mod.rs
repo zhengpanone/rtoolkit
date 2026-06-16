@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use crate::commands::{
     idgen::{run_gen_id, IdOpts},
     jsonfmt::{run_json_fmt, JsonFmtOpts},
+    pdf::{run_pdf, PdfOpts},
     portscan::{run_port_scan, PortScanOpts},
 };
 use crate::web::{run_web, WebOpts};
@@ -11,6 +12,7 @@ use crate::web::{run_web, WebOpts};
 // 公共 Command trait + 注册函数
 pub mod idgen;
 pub mod jsonfmt;
+pub mod pdf;
 pub mod portscan;
 
 #[derive(Parser)]
@@ -37,6 +39,11 @@ enum Commands {
         #[command(flatten)]
         opts: JsonFmtOpts,
     },
+    #[command(about = "PDF 处理工具")]
+    Pdf {
+        #[command(flatten)]
+        opts: PdfOpts,
+    },
     #[command(about = "启动本地 Web 工作台")]
     Web {
         #[command(flatten)]
@@ -50,6 +57,7 @@ pub fn build_cli() -> Result<()> {
         Commands::Idgen { opts } => run_gen_id(opts)?,
         Commands::PortScan { opts } => run_port_scan(opts)?,
         Commands::JsonFmt { opts } => run_json_fmt(opts)?,
+        Commands::Pdf { opts } => run_pdf(opts)?,
         Commands::Web { opts } => run_web(opts)?,
     };
     Ok(())
