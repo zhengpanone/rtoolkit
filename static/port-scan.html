@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>端口扫描 - rtoolkit</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+  <div id="app" class="app" v-cloak>
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>rtoolkit</h1>
+          <p>本地工具工作台</p>
+        </div>
+      </div>
+
+      <nav class="tool-list" aria-label="工具导航">
+        <a class="tool-tab" href="/idgen">
+          <span class="icon">ID</span>
+          <span><strong>身份证生成</strong><span class="hint">测试数据快速生成</span></span>
+        </a>
+        <a class="tool-tab active" href="/port-scan">
+          <span class="icon">PS</span>
+          <span><strong>端口扫描</strong><span class="hint">主机端口连通性检查</span></span>
+        </a>
+      </nav>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div>
+          <h2>端口扫描</h2>
+          <p class="hint">检查目标主机指定端口范围的连通性。</p>
+        </div>
+        <div class="status"><span class="dot"></span><span>服务运行中</span></div>
+      </div>
+
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <strong>扫描参数</strong>
+            <p class="hint">建议先扫描本机或小端口范围。</p>
+          </div>
+          <form @submit.prevent="scanPorts">
+            <div class="field">
+              <label for="scanTarget">目标主机</label>
+              <input id="scanTarget" v-model.trim="form.target">
+            </div>
+            <div class="field">
+              <label for="scanPort">端口范围</label>
+              <input id="scanPort" v-model.trim="form.port" placeholder="80 或 80-100">
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="scanConcurrency">并发数</label>
+                <input id="scanConcurrency" v-model.number="form.concurrency" type="number" min="1" max="1000">
+              </div>
+              <div class="field">
+                <label for="scanTimeout">超时毫秒</label>
+                <input id="scanTimeout" v-model.number="form.timeout_ms" type="number" min="50" max="10000">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="primary" type="submit" :disabled="loading">{{ loading ? '扫描中...' : '开始扫描' }}</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="summary" v-if="metrics.length">
+            <div class="metric" v-for="item in metrics" :key="item.label">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+          <div class="error" v-if="errorMessage">{{ errorMessage }}</div>
+          <div class="result-body">
+            <div class="empty" v-if="loading">正在扫描...</div>
+            <div class="empty" v-else-if="!result.ports.length">运行工具后，结果会显示在这里。</div>
+            <table v-else>
+              <thead>
+                <tr><th style="width: 140px">端口</th><th style="width: 160px">状态</th><th>说明</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in result.ports" :key="row.port">
+                  <td><pre>{{ row.port }}</pre></td>
+                  <td><span class="badge" :class="row.open ? 'open' : 'closed'">{{ row.open ? 'OPEN' : 'CLOSED' }}</span></td>
+                  <td>{{ row.open ? '连接成功' : '连接失败或超时' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/port-scan.js"></script>
+</body>
+</html>

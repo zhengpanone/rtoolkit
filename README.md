@@ -166,6 +166,11 @@ Web 前端文件位于：
 
 ```text
 static/index.html
+static/idgen.html
+static/port-scan.html
+static/styles.css
+static/idgen.js
+static/port-scan.js
 ```
 
 后端服务入口位于：
@@ -174,7 +179,7 @@ static/index.html
 src/web.rs
 ```
 
-`src/web.rs` 只负责 HTTP 服务和 API 路由，页面通过 `include_str!("../static/index.html")` 引入。
+`src/web.rs` 只负责 HTTP 服务、API 路由和静态资源响应。前端页面拆分为 HTML、CSS 和 JS，访问 `/idgen` 进入身份证生成页面，访问 `/port-scan` 进入端口扫描页面。
 
 ## Web API
 
@@ -298,7 +303,12 @@ rtoolkit/
 │   ├── areas.csv
 │   └── streets.csv
 ├── static/
-│   └── index.html
+│   ├── index.html
+│   ├── idgen.html
+│   ├── port-scan.html
+│   ├── styles.css
+│   ├── idgen.js
+│   └── port-scan.js
 ├── src/
 │   ├── main.rs
 │   ├── lib.rs

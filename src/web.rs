@@ -6,7 +6,12 @@ use serde::Serialize;
 use crate::commands::idgen::{generate_ids, IdGenerateRequest};
 use crate::commands::portscan::{scan_ports, PortScanRequest};
 
-const INDEX_HTML: &str = include_str!("../static/ocr.html");
+const INDEX_HTML: &str = include_str!("../static/index.html");
+const IDGEN_HTML: &str = include_str!("../static/idgen.html");
+const PORT_SCAN_HTML: &str = include_str!("../static/port-scan.html");
+const IDGEN_JS: &str = include_str!("../static/idgen.js");
+const PORT_SCAN_JS: &str = include_str!("../static/port-scan.js");
+const STYLES_CSS: &str = include_str!("../static/styles.css");
 
 #[derive(clap::Args)]
 pub struct WebOpts {
@@ -87,8 +92,23 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         reader.read_exact(&mut body)?;
     }
 
+    let path = path.split('?').next().unwrap_or(path);
+
     match (method, path) {
         ("GET", "/") | ("GET", "/index.html") => write_html(&mut stream, INDEX_HTML),
+        ("GET", "/idgen") | ("GET", "/idgen.html") => write_html(&mut stream, IDGEN_HTML),
+        ("GET", "/port-scan") | ("GET", "/port-scan.html") => {
+            write_html(&mut stream, PORT_SCAN_HTML)
+        }
+        ("GET", "/idgen.js") => {
+            write_text(&mut stream, "application/javascript; charset=utf-8", IDGEN_JS)
+        }
+        ("GET", "/port-scan.js") => write_text(
+            &mut stream,
+            "application/javascript; charset=utf-8",
+            PORT_SCAN_JS,
+        ),
+        ("GET", "/styles.css") => write_text(&mut stream, "text/css; charset=utf-8", STYLES_CSS),
         ("GET", "/api/health") => {
             write_json(&mut stream, 200, &serde_json::json!({ "status": "ok" }))
         }
@@ -131,6 +151,10 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
 
 fn write_html(stream: &mut TcpStream, html: &str) -> anyhow::Result<()> {
     write_response(stream, 200, "text/html; charset=utf-8", html.as_bytes())
+}
+
+fn write_text(stream: &mut TcpStream, content_type: &str, body: &str) -> anyhow::Result<()> {
+    write_response(stream, 200, content_type, body.as_bytes())
 }
 
 fn write_json<T: Serialize>(stream: &mut TcpStream, status: u16, value: &T) -> anyhow::Result<()> {

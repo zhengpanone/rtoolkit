@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>身份证生成 - rtoolkit</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+  <div id="app" class="app" v-cloak>
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>rtoolkit</h1>
+          <p>本地工具工作台</p>
+        </div>
+      </div>
+
+      <nav class="tool-list" aria-label="工具导航">
+        <a class="tool-tab active" href="/idgen">
+          <span class="icon">ID</span>
+          <span><strong>身份证生成</strong><span class="hint">测试数据快速生成</span></span>
+        </a>
+        <a class="tool-tab" href="/port-scan">
+          <span class="icon">PS</span>
+          <span><strong>端口扫描</strong><span class="hint">主机端口连通性检查</span></span>
+        </a>
+      </nav>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div>
+          <h2>身份证生成</h2>
+          <p class="hint">按地区、生日和性别生成测试用身份信息。</p>
+        </div>
+        <div class="status"><span class="dot"></span><span>服务运行中</span></div>
+      </div>
+
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <strong>生成参数</strong>
+            <p class="hint">留空地区或生日时会自动随机。</p>
+          </div>
+          <form @submit.prevent="generateIds">
+            <div class="grid-2">
+              <div class="field">
+                <label for="idCount">数量</label>
+                <input id="idCount" v-model.number="form.count" type="number" min="1" max="200">
+              </div>
+              <div class="field">
+                <label for="idGender">性别</label>
+                <select id="idGender" v-model="form.gender">
+                  <option value="any">随机</option>
+                  <option value="male">男</option>
+                  <option value="female">女</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="idRegion">地区代码</label>
+              <input id="idRegion" v-model.trim="form.region" placeholder="例如 110101">
+            </div>
+            <div class="field">
+              <label for="idBirth">固定生日</label>
+              <input id="idBirth" v-model.trim="form.birth" placeholder="例如 1990-05-20 或 19900520">
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="idMinBirth">随机生日开始</label>
+                <input id="idMinBirth" v-model.trim="form.min_birth">
+              </div>
+              <div class="field">
+                <label for="idMaxBirth">随机生日结束</label>
+                <input id="idMaxBirth" v-model.trim="form.max_birth">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="primary" type="submit" :disabled="loading">{{ loading ? '生成中...' : '生成' }}</button>
+              <button class="secondary" type="button" :disabled="!lastText" @click="copyResult">复制结果</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="summary" v-if="metrics.length">
+            <div class="metric" v-for="item in metrics" :key="item.label">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+          <div class="error" v-if="errorMessage">{{ errorMessage }}</div>
+          <div class="result-body">
+            <div class="empty" v-if="loading">正在生成...</div>
+            <div class="empty" v-else-if="!records.length">运行工具后，结果会显示在这里。</div>
+            <table v-else>
+              <thead>
+                <tr><th>姓名</th><th>身份证号</th><th>生日</th><th>性别</th><th>地址</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in records" :key="row.id_number">
+                  <td>{{ row.name }}</td>
+                  <td><pre>{{ row.id_number }}</pre></td>
+                  <td>{{ row.birthday }}</td>
+                  <td>{{ genderLabel(row.gender) }}</td>
+                  <td>{{ row.address }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/idgen.js"></script>
+</body>
+</html>
