@@ -1,128 +1,359 @@
-# rtoolkit - Rust 工具包
+# rtoolkit
 
-一个用 Rust 编写的命令行工具包，提供实用的数据生成功能。
+rtoolkit 是一个用 Rust 编写的本地工具箱，提供命令行和 Web 工作台两种使用方式。
 
-## 功能特性
+当前已支持：
 
-### 当前功能
-- ✅ **身份证生成器**：生成符合 GB 11643 标准的 18 位中国身份证号码
-  - 支持指定地区码（6位数字）
-  - 支持指定出生日期或随机日期范围
-  - 支持按性别生成（男性奇数，女性偶数）
-  - 自动计算校验位（MOD 11-2 算法）
+- 中国大陆身份证测试数据生成
+- TCP 端口扫描
+- 本地 Web 页面调用工具
 
-### 计划功能
-- 🔄 邮箱生成器
-- 🔄 PDF 工具集
+> 生成的身份证信息仅用于测试、开发和演示，不代表真实身份信息，请勿用于非法用途。
 
-## 安装
+## 安装与构建
 
-### 从源码构建
+从源码构建：
 
 ```bash
-# 克隆项目
 git clone https://github.com/zhengpanone/rtoolkit.git
 cd rtoolkit
-
-# 构建项目
 cargo build --release
+```
 
-# 安装到系统路径
+本地开发运行：
+
+```bash
+cargo run -- --help
+```
+
+安装到本机 Cargo bin 路径：
+
+```bash
 cargo install --path .
 ```
 
-### 使用 Cargo 安装（如果发布到 crates.io）
+## 命令总览
 
 ```bash
-cargo install rtoolkit
+rtoolkit --help
 ```
 
-## 使用方法
+可用命令：
 
-### 身份证生成
+```text
+idgen      生成中国身份证号
+port-scan  端口扫描
+web        启动本地 Web 工作台
+```
+
+使用 `cargo run` 时，需要把参数放在 `--` 后面：
 
 ```bash
-# 生成一个随机身份证号
-rtoolkit id
-
-# 生成多个身份证号
-rtoolkit id -n 5
-
-# 指定地区码（6位数字）
-rtoolkit id --region 110101
-
-# 指定出生日期
-rtoolkit id --birth 1990-05-20
-
-# 指定性别
-rtoolkit id --gender male    # 男性（奇数）
-rtoolkit id --gender female  # 女性（偶数）
-
-# 指定出生日期范围
-rtoolkit id --min-birth 1980-01-01 --max-birth 2000-12-31
-
-# 完整示例
-rtoolkit id -n 3 --region 310101 --birth 1995-08-15 --gender female
+cargo run -- idgen -n 3
 ```
 
-### 日期格式支持
+## 身份证生成
 
-- `19900520`（无分隔符）
-- `1990-05-20`（短横线分隔）
+生成 1 条随机数据：
+
+```bash
+rtoolkit idgen
+```
+
+生成多条数据：
+
+```bash
+rtoolkit idgen -n 5
+```
+
+指定地区代码：
+
+```bash
+rtoolkit idgen --region 110101
+```
+
+指定出生日期：
+
+```bash
+rtoolkit idgen --birth 1990-05-20
+```
+
+指定性别：
+
+```bash
+rtoolkit idgen --gender male
+rtoolkit idgen --gender female
+```
+
+指定随机生日范围：
+
+```bash
+rtoolkit idgen --min-birth 1980-01-01 --max-birth 2000-12-31
+```
+
+完整示例：
+
+```bash
+rtoolkit idgen -n 3 --region 310101 --birth 1995-08-15 --gender female
+```
+
+日期格式支持：
+
+- `19900520`
+- `1990-05-20`
+
+## 端口扫描
+
+扫描本机 80 端口：
+
+```bash
+rtoolkit port-scan
+```
+
+扫描指定目标：
+
+```bash
+rtoolkit port-scan --target 127.0.0.1 --port 80
+```
+
+扫描端口范围：
+
+```bash
+rtoolkit port-scan --target 127.0.0.1 --port 80-100
+```
+
+调整并发和超时时间：
+
+```bash
+rtoolkit port-scan --target 127.0.0.1 --port 1-1024 --concurrency 200 --timeout 500
+```
+
+JSON 输出：
+
+```bash
+rtoolkit port-scan --target 127.0.0.1 --port 80-100 --output json
+```
+
+为避免误操作，单次端口扫描最多允许 4096 个端口。
+
+## Web 工作台
+
+启动本地 Web 页面：
+
+```bash
+rtoolkit web
+```
+
+默认监听：
+
+```text
+http://127.0.0.1:8080
+```
+
+指定端口：
+
+```bash
+rtoolkit web --port 18080
+```
+
+指定监听地址：
+
+```bash
+rtoolkit web --host 0.0.0.0 --port 8080
+```
+
+Web 前端文件位于：
+
+```text
+static/index.html
+```
+
+后端服务入口位于：
+
+```text
+src/web.rs
+```
+
+`src/web.rs` 只负责 HTTP 服务和 API 路由，页面通过 `include_str!("../static/index.html")` 引入。
+
+## Web API
+
+### 健康检查
+
+```http
+GET /api/health
+```
+
+响应示例：
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### 生成身份证数据
+
+```http
+POST /api/idgen
+Content-Type: application/json
+```
+
+请求示例：
+
+```json
+{
+  "count": 2,
+  "region": "110101",
+  "birth": "1990-05-20",
+  "gender": "female"
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `count` | number | 生成数量，范围 1-200 |
+| `region` | string | 可选，6 位地区代码 |
+| `birth` | string | 可选，固定出生日期 |
+| `min_birth` | string | 可选，随机生日最小值 |
+| `max_birth` | string | 可选，随机生日最大值 |
+| `gender` | string | `any`、`male`、`female` |
+
+响应示例：
+
+```json
+{
+  "records": [
+    {
+      "name": "张三",
+      "id_number": "110101199005200024",
+      "region": "110101",
+      "birthday": "1990-05-20",
+      "gender": "female",
+      "address": "北京市市辖区东城区"
+    }
+  ]
+}
+```
+
+### 端口扫描
+
+```http
+POST /api/portscan
+Content-Type: application/json
+```
+
+请求示例：
+
+```json
+{
+  "target": "127.0.0.1",
+  "port": "80-100",
+  "concurrency": 100,
+  "timeout_ms": 1000
+}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `target` | string | 目标主机，默认 `127.0.0.1` |
+| `port` | string | 端口或端口范围，例如 `80`、`80-100` |
+| `concurrency` | number | 并发数，范围 1-1000 |
+| `timeout_ms` | number | 连接超时时间，范围 50-10000 |
+
+响应示例：
+
+```json
+{
+  "target": "127.0.0.1",
+  "port_range": "80-100",
+  "concurrency": 100,
+  "timeout_ms": 1000,
+  "total": 21,
+  "open_count": 1,
+  "closed_count": 20,
+  "open_ports": [80],
+  "ports": [
+    {
+      "port": 80,
+      "open": true
+    }
+  ]
+}
+```
 
 ## 项目结构
 
-```
+```text
 rtoolkit/
-├── Cargo.toml          # 项目配置和依赖
-├── README.md           # 项目说明文档
+├── Cargo.toml
+├── README.md
+├── data/
+│   ├── provinces.csv
+│   ├── cities.csv
+│   ├── areas.csv
+│   └── streets.csv
+├── static/
+│   └── index.html
 ├── src/
-│   ├── main.rs         # 命令行入口
-│   └── lib.rs          # 核心逻辑库
-└── data/
-    └── region_codes.csv # 地区码数据（待完善）
+│   ├── main.rs
+│   ├── lib.rs
+│   ├── web.rs
+│   ├── commands/
+│   │   ├── mod.rs
+│   │   ├── idgen.rs
+│   │   └── portscan.rs
+│   └── utils/
+│       ├── mod.rs
+│       └── areas.rs
+└── tests/
+    └── fake.rs
 ```
-
-## 技术栈
-
-- **Rust 2021 Edition** - 编程语言
-- **clap** - 命令行参数解析
-- **chrono** - 日期时间处理
-- **rand** - 随机数生成
-- **thiserror** - 错误处理
 
 ## 开发
 
-### 运行测试
+运行测试：
 
 ```bash
 cargo test
 ```
 
-### 调试构建
+调试构建：
 
 ```bash
 cargo build
 ```
 
-### 运行示例
+运行 Web 工作台：
 
 ```bash
-cargo run -- id -n 3
+cargo run -- web --port 8080
 ```
+
+运行命令示例：
+
+```bash
+cargo run -- idgen -n 3
+cargo run -- port-scan --target 127.0.0.1 --port 80-100
+```
+
+## 技术栈
+
+- Rust 2021
+- clap：命令行参数解析
+- tokio / futures：异步端口扫描
+- chrono：日期处理
+- rand / fake：测试数据生成
+- serde / serde_json：JSON 序列化
+- Vue.js：Web 工作台前端页面
 
 ## 许可证
 
-本项目采用双重许可证：
-- MIT License
-- Apache License 2.0
+本项目采用双许可证：
 
-你可以选择其中任意一种许可证来使用本项目。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 免责声明
-
-本工具生成的身份证号码仅用于测试和开发目的，请勿用于非法用途。生成的号码格式符合国家标准，但不保证其真实性和唯一性。
+- MIT
+- Apache-2.0

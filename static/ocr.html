@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rtoolkit</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --line: #dde3ea;
+      --text: #1c2430;
+      --muted: #637083;
+      --primary: #2563eb;
+      --primary-soft: #eaf1ff;
+      --good: #0f766e;
+      --bad: #b42318;
+      --shadow: 0 12px 28px rgba(24, 36, 51, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    [v-cloak] { display: none; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+    }
+
+    aside {
+      border-right: 1px solid var(--line);
+      background: #fbfcfe;
+      padding: 20px 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: #172033;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 22px;
+    }
+
+    .brand p, .hint, label {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .tool-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .tool-tab {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .tool-tab:hover { background: #eef2f7; }
+
+    .tool-tab.active {
+      border-color: #b8c7e6;
+      background: var(--primary-soft);
+    }
+
+    .icon {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font-weight: 700;
+      color: var(--primary);
+      flex: 0 0 auto;
+    }
+
+    main {
+      min-width: 0;
+      padding: 22px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      margin: 0 0 4px;
+      font-size: 22px;
+      line-height: 28px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--good);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-head strong {
+      display: block;
+      font-size: 15px;
+      line-height: 20px;
+    }
+
+    form {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    input, select {
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid #cfd8e3;
+      border-radius: 7px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+    }
+
+    input:focus, select:focus {
+      outline: 2px solid rgba(37, 99, 235, .18);
+      border-color: var(--primary);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-top: 2px;
+    }
+
+    button.primary, button.secondary {
+      min-height: 38px;
+      border-radius: 7px;
+      border: 1px solid transparent;
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--primary);
+      color: #fff;
+      min-width: 116px;
+    }
+
+    button.secondary {
+      background: #fff;
+      border-color: var(--line);
+      color: var(--text);
+    }
+
+    button:disabled {
+      opacity: .65;
+      cursor: wait;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      border-bottom: 1px solid var(--line);
+      background: var(--line);
+    }
+
+    .metric {
+      min-width: 0;
+      background: #fff;
+      padding: 12px 14px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .metric strong {
+      display: block;
+      overflow: hidden;
+      margin-top: 2px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 18px;
+      line-height: 24px;
+    }
+
+    .result-body {
+      padding: 14px;
+      overflow: auto;
+      max-height: calc(100vh - 190px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    th, td {
+      border-bottom: 1px solid #edf1f5;
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      background: #fbfcfe;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #eef2f7;
+    }
+
+    .badge.open {
+      background: #e6f6f2;
+      color: var(--good);
+    }
+
+    .badge.closed {
+      background: #fff1f0;
+      color: var(--bad);
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .empty {
+      min-height: 240px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .error {
+      margin: 14px;
+      padding: 10px 12px;
+      border: 1px solid #f3b5af;
+      border-radius: 7px;
+      background: #fff7f6;
+      color: var(--bad);
+    }
+
+    @media (max-width: 960px) {
+      .app { grid-template-columns: 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid var(--line); }
+      .tool-list { grid-template-columns: 1fr 1fr; }
+      .workspace { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      main { padding: 14px; }
+      .topbar { display: grid; }
+      .grid-2, .tool-list { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: 1fr; }
+      .result-body { max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="app" v-cloak>
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>rtoolkit</h1>
+          <p>本地工具工作台</p>
+        </div>
+      </div>
+
+      <div class="tool-list">
+        <button class="tool-tab" :class="{ active: tool === 'id' }" type="button" @click="selectTool('id')">
+          <span class="icon">ID</span>
+          <span><strong>身份证生成</strong><p class="hint">测试数据快速生成</p></span>
+        </button>
+        <button class="tool-tab" :class="{ active: tool === 'port' }" type="button" @click="selectTool('port')">
+          <span class="icon">PS</span>
+          <span><strong>端口扫描</strong><p class="hint">主机端口连通性检查</p></span>
+        </button>
+      </div>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div>
+          <h2>{{ pageTitle }}</h2>
+          <p class="hint">{{ pageHint }}</p>
+        </div>
+        <div class="status"><span class="dot"></span><span>服务运行中</span></div>
+      </div>
+
+      <div class="workspace">
+        <section class="panel" v-if="tool === 'id'">
+          <div class="panel-head">
+            <strong>生成参数</strong>
+            <p class="hint">留空地区或生日时会自动随机。</p>
+          </div>
+          <form @submit.prevent="generateIds">
+            <div class="grid-2">
+              <div class="field">
+                <label for="idCount">数量</label>
+                <input id="idCount" v-model.number="idForm.count" type="number" min="1" max="200">
+              </div>
+              <div class="field">
+                <label for="idGender">性别</label>
+                <select id="idGender" v-model="idForm.gender">
+                  <option value="any">随机</option>
+                  <option value="male">男</option>
+                  <option value="female">女</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="idRegion">地区代码</label>
+              <input id="idRegion" v-model.trim="idForm.region" placeholder="例如 110101">
+            </div>
+            <div class="field">
+              <label for="idBirth">固定生日</label>
+              <input id="idBirth" v-model.trim="idForm.birth" placeholder="例如 1990-05-20 或 19900520">
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="idMinBirth">随机生日开始</label>
+                <input id="idMinBirth" v-model.trim="idForm.min_birth">
+              </div>
+              <div class="field">
+                <label for="idMaxBirth">随机生日结束</label>
+                <input id="idMaxBirth" v-model.trim="idForm.max_birth">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="primary" type="submit" :disabled="loading">{{ loading ? '生成中...' : '生成' }}</button>
+              <button class="secondary" type="button" :disabled="!lastText" @click="copyResult">复制结果</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel" v-if="tool === 'port'">
+          <div class="panel-head">
+            <strong>扫描参数</strong>
+            <p class="hint">建议先扫描本机或小端口范围。</p>
+          </div>
+          <form @submit.prevent="scanPorts">
+            <div class="field">
+              <label for="scanTarget">目标主机</label>
+              <input id="scanTarget" v-model.trim="portForm.target">
+            </div>
+            <div class="field">
+              <label for="scanPort">端口范围</label>
+              <input id="scanPort" v-model.trim="portForm.port" placeholder="80 或 80-100">
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label for="scanConcurrency">并发数</label>
+                <input id="scanConcurrency" v-model.number="portForm.concurrency" type="number" min="1" max="1000">
+              </div>
+              <div class="field">
+                <label for="scanTimeout">超时毫秒</label>
+                <input id="scanTimeout" v-model.number="portForm.timeout_ms" type="number" min="50" max="10000">
+              </div>
+            </div>
+            <div class="actions">
+              <button class="primary" type="submit" :disabled="loading">{{ loading ? '扫描中...' : '开始扫描' }}</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="summary" v-if="metrics.length">
+            <div class="metric" v-for="item in metrics" :key="item.label">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+
+          <div class="error" v-if="errorMessage">{{ errorMessage }}</div>
+
+          <div class="result-body">
+            <div class="empty" v-if="loading">{{ loadingText }}</div>
+            <div class="empty" v-else-if="resultType === 'empty'">运行工具后，结果会显示在这里。</div>
+
+            <table v-else-if="resultType === 'id'">
+              <thead>
+                <tr><th>姓名</th><th>身份证号</th><th>生日</th><th>性别</th><th>地址</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in idRecords" :key="row.id_number">
+                  <td>{{ row.name }}</td>
+                  <td><pre>{{ row.id_number }}</pre></td>
+                  <td>{{ row.birthday }}</td>
+                  <td>{{ genderLabel(row.gender) }}</td>
+                  <td>{{ row.address }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table v-else-if="resultType === 'port'">
+              <thead>
+                <tr><th style="width: 140px">端口</th><th style="width: 160px">状态</th><th>说明</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in portResult.ports" :key="row.port">
+                  <td><pre>{{ row.port }}</pre></td>
+                  <td><span class="badge" :class="row.open ? 'open' : 'closed'">{{ row.open ? 'OPEN' : 'CLOSED' }}</span></td>
+                  <td>{{ row.open ? '连接成功' : '连接失败或超时' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    Vue.createApp({
+      data: function () {
+        return {
+          tool: 'id',
+          loading: false,
+          errorMessage: '',
+          resultType: 'empty',
+          metrics: [],
+          idRecords: [],
+          portResult: { ports: [] },
+          lastText: '',
+          idForm: {
+            count: 5,
+            gender: 'any',
+            region: '',
+            birth: '',
+            min_birth: '1970-01-01',
+            max_birth: '2010-12-31'
+          },
+          portForm: {
+            target: '127.0.0.1',
+            port: '80',
+            concurrency: 100,
+            timeout_ms: 1000
+          }
+        };
+      },
+
+      computed: {
+        pageTitle: function () {
+          return this.tool === 'id' ? '身份证生成' : '端口扫描';
+        },
+        pageHint: function () {
+          return this.tool === 'id'
+            ? '按地区、生日和性别生成测试用身份信息。'
+            : '检查目标主机指定端口范围的连通性。';
+        },
+        loadingText: function () {
+          return this.tool === 'id' ? '正在生成...' : '正在扫描...';
+        }
+      },
+
+      methods: {
+        selectTool: function (tool) {
+          this.tool = tool;
+          this.clearResult();
+        },
+
+        clearResult: function () {
+          this.errorMessage = '';
+          this.resultType = 'empty';
+          this.metrics = [];
+          this.idRecords = [];
+          this.portResult = { ports: [] };
+          this.lastText = '';
+        },
+
+        normalizedPayload: function (payload) {
+          var data = {};
+          Object.keys(payload).forEach(function (key) {
+            var value = payload[key];
+            data[key] = value === '' ? null : value;
+          });
+          return data;
+        },
+
+        postJson: async function (url, payload) {
+          var response = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          var text = await response.text();
+          var data = text ? JSON.parse(text) : null;
+          if (!response.ok) {
+            throw new Error(data && data.error ? data.error : 'request failed');
+          }
+          return data;
+        },
+
+        generateIds: async function () {
+          this.loading = true;
+          this.errorMessage = '';
+          this.resultType = 'empty';
+          try {
+            var data = await this.postJson('/api/idgen', this.normalizedPayload(this.idForm));
+            var records = data.records || [];
+            this.idRecords = records;
+            this.resultType = 'id';
+            this.metrics = [
+              { label: '生成数量', value: records.length },
+              { label: '地区模式', value: this.idForm.region || '随机' },
+              { label: '性别', value: this.genderLabel(this.idForm.gender) },
+              { label: '结果格式', value: '结构化数据' }
+            ];
+            this.lastText = records.map(function (row) {
+              return row.name + '\t' + row.id_number + '\t' + row.address;
+            }).join('\n');
+          } catch (error) {
+            this.errorMessage = error.message || String(error);
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        scanPorts: async function () {
+          this.loading = true;
+          this.errorMessage = '';
+          this.resultType = 'empty';
+          try {
+            var result = await this.postJson('/api/portscan', this.normalizedPayload(this.portForm));
+            this.portResult = result;
+            this.resultType = 'port';
+            this.metrics = [
+              { label: '目标', value: result.target },
+              { label: '扫描端口', value: result.total },
+              { label: '开放端口', value: result.open_count },
+              { label: '超时', value: String(result.timeout_ms) + 'ms' }
+            ];
+            this.lastText = JSON.stringify(result, null, 2);
+          } catch (error) {
+            this.errorMessage = error.message || String(error);
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        copyResult: async function () {
+          if (!this.lastText) return;
+          await navigator.clipboard.writeText(this.lastText);
+        },
+
+        genderLabel: function (value) {
+          if (value === 'male') return '男';
+          if (value === 'female') return '女';
+          return '随机';
+        }
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

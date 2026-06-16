@@ -5,6 +5,7 @@ use crate::commands::{
     idgen::{run_gen_id, IdOpts},
     portscan::{run_port_scan, PortScanOpts},
 };
+use crate::web::{run_web, WebOpts};
 
 // 公共 Command trait + 注册函数
 pub mod idgen;
@@ -29,6 +30,11 @@ enum Commands {
         #[command(flatten)]
         opts: PortScanOpts,
     },
+    #[command(about = "启动本地 Web 工作台")]
+    Web {
+        #[command(flatten)]
+        opts: WebOpts,
+    },
 }
 
 pub fn build_cli() -> Result<()> {
@@ -36,6 +42,7 @@ pub fn build_cli() -> Result<()> {
     match cli.command {
         Commands::Idgen { opts } => run_gen_id(opts)?,
         Commands::PortScan { opts } => run_port_scan(opts)?,
+        Commands::Web { opts } => run_web(opts)?,
     };
     Ok(())
 }

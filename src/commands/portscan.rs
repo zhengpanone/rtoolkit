@@ -1,48 +1,41 @@
 use std::sync::Arc;
 
 use futures::stream::{FuturesUnordered, StreamExt};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
 use tokio::time::{timeout, Duration};
 
-// 端口扫描实现
 #[derive(clap::Args)]
 pub struct PortScanOpts {
-    /// 目标主机，留空为本机
     #[arg(
         short = 't',
         long = "target",
         value_name = "HOST",
         default_value = "127.0.0.1",
-        help = "目标主机（留空为本机）"
+        help = "目标主机"
     )]
     target: Option<String>,
-    /// 端口范围，支持单端口，如 80，也支持范围，如 80-100
     #[arg(
         short = 'p',
         long = "port",
         value_name = "RANGE",
         default_value = "80",
-        help = "目标端口",
-        long_help = "目标端口（留空为 80)"
+        help = "目标端口, 例如 80 或 80-100"
     )]
     port: Option<String>,
-    /// 并发限制(只在远程扫描时生效)
     #[arg(
         short = 'c',
         long = "concurrency",
         value_name = "N",
         default_value = "100",
-        help = "并发数",
-        long_help = "并发数（留空为 100, 远程扫描时生效）"
+        help = "并发数"
     )]
     concurrency: Option<usize>,
-
     #[arg(
         long = "timeout",
         default_value = "1000",
         value_name = "MS",
-        help = "超时时间(毫秒)",
-        long_help = "超时时间（留空为 1000, 远程扫描时生效）"
+        help = "超时时间(毫秒)"
     )]
     time_out: Option<u64>,
     #[arg(
@@ -50,24 +43,52 @@ pub struct PortScanOpts {
         long = "output",
         value_name = "FMT",
         default_value = "plain",
-        help = "输出格式",
-        long_help = "输出格式（留空为 plain, plain| json| csv）"
+        help = "输出格式 plain|json"
     )]
     output: Option<String>,
 }
 
 pub fn run_port_scan(opts: PortScanOpts) -> Result<(), PortScanError> {
-    // 安全使用默认值（避免 unwrap panic）
-    let target = opts.target.unwrap_or_else(|| "127.0.0.1".to_string());
-    let port = opts.port.unwrap_or_else(|| "80".to_string());
-    let concurrency = opts.concurrency.unwrap_or(100);
-    let timeout_ms = opts.time_out.unwrap_or(1000);
-    let _output = opts.output.unwrap_or("plain".to_string());
-
-    // 创建 tokio runtime 并执行异步扫描
+    let request = PortScanRequest {
+        target: opts.target,
+        port: opts.port,
+        concurrency: opts.concurrency,
+        timeout_ms: opts.time_out,
+    };
+    let output = opts.output.unwrap_or_else(|| "plain".to_string());
     let rt =
         tokio::runtime::Runtime::new().map_err(|e| PortScanError::RuntimeError(e.to_string()))?;
-    rt.block_on(async move { remote_scan(target, &port, concurrency, timeout_ms).await })?;
+    let result = rt.block_on(async move { scan_ports(request).await })?;
+
+    if output == "json" {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result)
+                .map_err(|e| PortScanError::RuntimeError(e.to_string()))?
+        );
+        return Ok(());
+    }
+
+    println!(
+        "Scanning {} ports {} on {} (concurrency={}, timeout={}ms)",
+        result.target, result.port_range, result.target, result.concurrency, result.timeout_ms
+    );
+    for port in &result.ports {
+        if port.open {
+            println!("[OPEN]  Port {:>5} is open", port.port);
+        } else {
+            println!("[CLOSED] Port {:>5} is closed", port.port);
+        }
+    }
+    println!("\nScan finished.");
+    println!("Total ports scanned: {}", result.total);
+    println!(
+        "Open ports: {}  Closed ports: {}",
+        result.open_count, result.closed_count
+    );
+    if !result.open_ports.is_empty() {
+        println!("Open port list: {:?}", result.open_ports);
+    }
 
     Ok(())
 }
@@ -78,10 +99,53 @@ pub enum PortScanError {
     InvalidPort(String),
     #[error("port range is invalid: {0}")]
     InvalidPortRange(String),
+    #[error("too many ports requested, maximum is 4096")]
+    TooManyPorts,
     #[error("tokio runtime error: {0}")]
     RuntimeError(String),
     #[error("join error: {0}")]
     JoinError(String),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PortScanRequest {
+    pub target: Option<String>,
+    pub port: Option<String>,
+    pub concurrency: Option<usize>,
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PortStatus {
+    pub port: u32,
+    pub open: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PortScanResult {
+    pub target: String,
+    pub port_range: String,
+    pub concurrency: usize,
+    pub timeout_ms: u64,
+    pub total: usize,
+    pub open_count: usize,
+    pub closed_count: usize,
+    pub open_ports: Vec<u32>,
+    pub ports: Vec<PortStatus>,
+}
+
+pub async fn scan_ports(request: PortScanRequest) -> Result<PortScanResult, PortScanError> {
+    let target = request
+        .target
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let port = request
+        .port
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "80".to_string());
+    let concurrency = request.concurrency.unwrap_or(100).clamp(1, 1000);
+    let timeout_ms = request.timeout_ms.unwrap_or(1000).clamp(50, 10_000);
+    remote_scan(target, &port, concurrency, timeout_ms).await
 }
 
 pub async fn remote_scan(
@@ -89,19 +153,16 @@ pub async fn remote_scan(
     port: &str,
     concurrency: usize,
     timeout_ms: u64,
-) -> Result<(), PortScanError> {
+) -> Result<PortScanResult, PortScanError> {
     let (start, end) = parse_port_range(port)?;
-    println!(
-        "Scanning {} ports {}-{} on {} (concurrency={}, timeout={}ms)",
-        target, start, end, target, concurrency, timeout_ms
-    );
-    // 必须使用 Arc，否则 sem.clone() 不存在
-    let sem = Arc::new(Semaphore::new(concurrency));
+    if end - start > 4095 {
+        return Err(PortScanError::TooManyPorts);
+    }
 
+    let sem = Arc::new(Semaphore::new(concurrency));
     let mut tasks = FuturesUnordered::new();
 
     for port in start..=end {
-        // 获取一个可移动的 permit
         let permit = sem
             .clone()
             .acquire_owned()
@@ -113,50 +174,42 @@ pub async fn remote_scan(
         tasks.push(tokio::spawn(async move {
             let _permit = permit;
             let addr = format!("{}:{}", target_clone, port);
-
-            let is_open = match timeout(to, tokio::net::TcpStream::connect(&addr)).await {
-                Ok(Ok(_stream)) => true,
-                _ => false,
-            };
-            (port, is_open)
+            let open = matches!(
+                timeout(to, tokio::net::TcpStream::connect(&addr)).await,
+                Ok(Ok(_))
+            );
+            PortStatus { port, open }
         }));
     }
-    // 收集并打印开放端口
-    // 统计
-    let mut open_ports: Vec<u32> = Vec::new();
-    let mut closed_count: usize = 0;
-    let mut total: usize = 0;
+
+    let mut ports = Vec::new();
     while let Some(join_res) = tasks.next().await {
-        total += 1;
         match join_res {
-            Ok((port_num, true)) => {
-                println!("[OPEN]  Port {:>5} is open", port_num);
-                open_ports.push(port_num);
-            }
-            Ok((port_num, false)) => {
-                println!("[CLOSED] Port {:>5} is closed", port_num);
-                closed_count += 1;
-            }
-            Err(e) => {
-                eprintln!("[ERROR] task join error: {}", e);
-                return Err(PortScanError::JoinError(e.to_string()));
-            }
+            Ok(status) => ports.push(status),
+            Err(e) => return Err(PortScanError::JoinError(e.to_string())),
         }
     }
 
-    println!("\nScan finished.");
-    println!("Total ports scanned: {}", total);
-    println!(
-        "Open ports: {}  Closed ports: {}",
-        open_ports.len(),
-        closed_count
-    );
+    ports.sort_by_key(|status| status.port);
+    let open_ports: Vec<u32> = ports
+        .iter()
+        .filter(|status| status.open)
+        .map(|status| status.port)
+        .collect();
+    let total = ports.len();
+    let open_count = open_ports.len();
 
-    if !open_ports.is_empty() {
-        println!("Open port list: {:?}", open_ports);
-    }
-
-    Ok(())
+    Ok(PortScanResult {
+        target,
+        port_range: port.to_string(),
+        concurrency,
+        timeout_ms,
+        total,
+        open_count,
+        closed_count: total - open_count,
+        open_ports,
+        ports,
+    })
 }
 
 fn parse_port_range(s: &str) -> Result<(u32, u32), PortScanError> {
@@ -169,8 +222,10 @@ fn parse_port_range(s: &str) -> Result<(u32, u32), PortScanError> {
         let end: u32 = b
             .trim()
             .parse()
-            .map_err(|_| PortScanError::InvalidPort(a.into()))?;
-        if start == 0 || end == 0 || start > end {
+            .map_err(|_| PortScanError::InvalidPort(b.into()))?;
+        validate_port(start, s)?;
+        validate_port(end, s)?;
+        if start > end {
             return Err(PortScanError::InvalidPortRange(s.into()));
         }
         Ok((start, end))
@@ -178,6 +233,15 @@ fn parse_port_range(s: &str) -> Result<(u32, u32), PortScanError> {
         let port: u32 = s
             .parse()
             .map_err(|_| PortScanError::InvalidPort(s.into()))?;
+        validate_port(port, s)?;
         Ok((port, port))
+    }
+}
+
+fn validate_port(port: u32, raw: &str) -> Result<(), PortScanError> {
+    if (1..=65535).contains(&port) {
+        Ok(())
+    } else {
+        Err(PortScanError::InvalidPortRange(raw.into()))
     }
 }
