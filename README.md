@@ -6,6 +6,7 @@ rtoolkit 是一个用 Rust 编写的本地工具箱，提供命令行和 Web 工
 
 - 中国大陆身份证测试数据生成
 - TCP 端口扫描
+- JSON 格式化、压缩和排序
 - 本地 Web 页面调用工具
 
 > 生成的身份证信息仅用于测试、开发和演示，不代表真实身份信息，请勿用于非法用途。
@@ -43,6 +44,7 @@ rtoolkit --help
 ```text
 idgen      生成中国身份证号
 port-scan  端口扫描
+jsonfmt    JSON 格式化
 web        启动本地 Web 工作台
 ```
 
@@ -135,6 +137,55 @@ rtoolkit port-scan --target 127.0.0.1 --port 80-100 --output json
 ```
 
 为避免误操作，单次端口扫描最多允许 4096 个端口。
+
+## JSON 格式化
+
+默认会尽量保留对象 key 的输入顺序；需要稳定排序时使用 `--sort`。
+
+从 stdin 读取并格式化输出：
+
+```bash
+echo '{"b":1,"a":[2,3]}' | rtoolkit jsonfmt
+```
+
+直接传入 JSON 文本：
+
+```bash
+rtoolkit jsonfmt -i '{"b":2,"a":1}'
+rtoolkit jsonfmt '{"b":2,"a":1}' -o output.json
+```
+
+读取 JSON 文件并输出到终端：
+
+```bash
+rtoolkit jsonfmt -i input.json
+```
+
+读取 JSON 文件并写入另一个文件：
+
+```bash
+rtoolkit jsonfmt -i input.json -o output.json
+```
+
+指定缩进宽度：
+
+```bash
+rtoolkit jsonfmt -i input.json --indent 4
+```
+
+按对象 key 排序：
+
+```bash
+rtoolkit jsonfmt -i input.json --sort -o output.json
+```
+
+压缩为单行 JSON：
+
+```bash
+rtoolkit jsonfmt -i input.json --compact -o output.json
+```
+
+命令别名 `json-fmt` 也可使用。
 
 ## Web 工作台
 
@@ -316,6 +367,7 @@ rtoolkit/
 │   ├── commands/
 │   │   ├── mod.rs
 │   │   ├── idgen.rs
+│   │   ├── jsonfmt.rs
 │   │   └── portscan.rs
 │   └── utils/
 │       ├── mod.rs
@@ -349,6 +401,7 @@ cargo run -- web --port 8080
 ```bash
 cargo run -- idgen -n 3
 cargo run -- port-scan --target 127.0.0.1 --port 80-100
+cargo run -- jsonfmt input.json -o output.json
 ```
 
 ## 技术栈
@@ -358,7 +411,7 @@ cargo run -- port-scan --target 127.0.0.1 --port 80-100
 - tokio / futures：异步端口扫描
 - chrono：日期处理
 - rand / fake：测试数据生成
-- serde / serde_json：JSON 序列化
+- serde / serde_json：JSON 序列化与格式化
 - Vue.js：Web 工作台前端页面
 
 ## 许可证

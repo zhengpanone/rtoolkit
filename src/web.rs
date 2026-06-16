@@ -100,9 +100,11 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         ("GET", "/port-scan") | ("GET", "/port-scan.html") => {
             write_html(&mut stream, PORT_SCAN_HTML)
         }
-        ("GET", "/idgen.js") => {
-            write_text(&mut stream, "application/javascript; charset=utf-8", IDGEN_JS)
-        }
+        ("GET", "/idgen.js") => write_text(
+            &mut stream,
+            "application/javascript; charset=utf-8",
+            IDGEN_JS,
+        ),
         ("GET", "/port-scan.js") => write_text(
             &mut stream,
             "application/javascript; charset=utf-8",
