@@ -45,13 +45,20 @@ Vue.createApp({
         }
 
         this.result = data;
+        var pidCount = (data.ports || []).filter(function (row) {
+          return row.pid;
+        }).length;
+        var commandCount = (data.ports || []).filter(function (row) {
+          return row.command;
+        }).length;
         this.metrics = [
           { label: '目标', value: data.target },
           { label: '扫描端口', value: data.total },
           { label: '开放端口', value: data.open_count },
+          { label: 'PID', value: pidCount },
+          { label: '命令', value: commandCount },
           { label: '超时', value: String(data.timeout_ms) + 'ms' }
-        ];
-        this.lastText = JSON.stringify(data, null, 2);
+        ];        this.lastText = JSON.stringify(data, null, 2);
       } catch (error) {
         this.errorMessage = error.message || String(error);
       } finally {

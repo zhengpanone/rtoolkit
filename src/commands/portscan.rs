@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use std::process::Command;
 use std::sync::Arc;
 
+use clap::ValueEnum;
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
@@ -46,6 +49,15 @@ pub struct PortScanOpts {
         help = "输出格式 plain|json"
     )]
     output: Option<String>,
+
+    #[arg(
+        short = 's',
+        long = "show",
+        default_value = "all",
+        value_name = "TYPE",
+        help = "显示类型 all | open | closed"
+    )]
+    show_type: ShowType,
 }
 
 pub fn run_port_scan(opts: PortScanOpts) -> Result<(), PortScanError> {
@@ -55,10 +67,17 @@ pub fn run_port_scan(opts: PortScanOpts) -> Result<(), PortScanError> {
         concurrency: opts.concurrency,
         timeout_ms: opts.time_out,
     };
+
     let output = opts.output.unwrap_or_else(|| "plain".to_string());
     let rt =
         tokio::runtime::Runtime::new().map_err(|e| PortScanError::RuntimeError(e.to_string()))?;
-    let result = rt.block_on(async move { scan_ports(request).await })?;
+    let mut result = rt.block_on(async move { scan_ports(request).await })?;
+
+    match opts.show_type {
+        ShowType::Open => result.ports.retain(|p| p.open),
+        ShowType::Closed => result.ports.retain(|p| !p.open),
+        ShowType::All => {}
+    }
 
     if output == "json" {
         println!(
@@ -75,7 +94,18 @@ pub fn run_port_scan(opts: PortScanOpts) -> Result<(), PortScanError> {
     );
     for port in &result.ports {
         if port.open {
-            println!("[OPEN]  Port {:>5} is open", port.port);
+            match (port.pid, port.command.as_deref()) {
+                (Some(pid), Some(command)) => {
+                    println!(
+                        "[OPEN]  Port {:>5} is open (pid={}, command={})",
+                        port.port, pid, command
+                    )
+                }
+                (Some(pid), None) => {
+                    println!("[OPEN]  Port {:>5} is open (pid={})", port.port, pid)
+                }
+                (None, _) => println!("[OPEN]  Port {:>5} is open", port.port),
+            }
         } else {
             println!("[CLOSED] Port {:>5} is closed", port.port);
         }
@@ -107,6 +137,19 @@ pub enum PortScanError {
     JoinError(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ShowType {
+    All,
+    Open,
+    Closed,
+}
+
+impl Default for ShowType {
+    fn default() -> Self {
+        Self::All
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct PortScanRequest {
     pub target: Option<String>,
@@ -119,6 +162,8 @@ pub struct PortScanRequest {
 pub struct PortStatus {
     pub port: u32,
     pub open: bool,
+    pub pid: Option<u32>,
+    pub command: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -178,7 +223,12 @@ pub async fn remote_scan(
                 timeout(to, tokio::net::TcpStream::connect(&addr)).await,
                 Ok(Ok(_))
             );
-            PortStatus { port, open }
+            PortStatus {
+                port,
+                open,
+                pid: None,
+                command: None,
+            }
         }));
     }
 
@@ -191,6 +241,16 @@ pub async fn remote_scan(
     }
 
     ports.sort_by_key(|status| status.port);
+    if is_local_target(&target) {
+        let pid_map = local_tcp_listen_pids();
+        let command_map = local_process_commands();
+        for status in &mut ports {
+            if status.open {
+                status.pid = pid_map.get(&status.port).copied();
+                status.command = status.pid.and_then(|pid| command_map.get(&pid).cloned());
+            }
+        }
+    }
     let open_ports: Vec<u32> = ports
         .iter()
         .filter(|status| status.open)
@@ -244,4 +304,191 @@ fn validate_port(port: u32, raw: &str) -> Result<(), PortScanError> {
     } else {
         Err(PortScanError::InvalidPortRange(raw.into()))
     }
+}
+
+fn is_local_target(target: &str) -> bool {
+    matches!(
+        target.trim().to_ascii_lowercase().as_str(),
+        "127.0.0.1" | "localhost" | "::1" | "0.0.0.0"
+    )
+}
+
+fn local_tcp_listen_pids() -> HashMap<u32, u32> {
+    #[cfg(windows)]
+    {
+        windows_tcp_listen_pids()
+    }
+
+    #[cfg(not(windows))]
+    {
+        HashMap::new()
+    }
+}
+
+fn local_process_commands() -> HashMap<u32, String> {
+    #[cfg(windows)]
+    {
+        windows_process_commands()
+    }
+
+    #[cfg(not(windows))]
+    {
+        HashMap::new()
+    }
+}
+
+#[cfg(windows)]
+fn windows_tcp_listen_pids() -> HashMap<u32, u32> {
+    let mut pids = HashMap::new();
+    let output = Command::new("netstat").args(["-ano", "-p", "tcp"]).output();
+    let Ok(output) = output else {
+        return pids;
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 5 || !parts[0].eq_ignore_ascii_case("TCP") {
+            continue;
+        }
+        if !parts[3].eq_ignore_ascii_case("LISTENING") {
+            continue;
+        }
+        let Some(port) = parse_addr_port(parts[1]) else {
+            continue;
+        };
+        let Ok(pid) = parts[4].parse::<u32>() else {
+            continue;
+        };
+        pids.entry(port).or_insert(pid);
+    }
+    pids
+}
+
+#[cfg(windows)]
+fn parse_addr_port(addr: &str) -> Option<u32> {
+    addr.rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u32>().ok())
+}
+
+#[cfg(windows)]
+fn windows_process_commands() -> HashMap<u32, String> {
+    let mut commands = HashMap::new();
+    let script = "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }";
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output();
+    let Ok(output) = output else {
+        return commands;
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let mut parts = line.splitn(3, '\t');
+        let Some(pid_text) = parts.next() else {
+            continue;
+        };
+        let Ok(pid) = pid_text.parse::<u32>() else {
+            continue;
+        };
+        let name = parts.next().unwrap_or("").trim();
+        let command_line = parts.next().unwrap_or("").trim();
+        let command = if command_line.is_empty() {
+            name
+        } else {
+            command_line
+        };
+        if !command.is_empty() {
+            commands.insert(pid, command.to_string());
+        }
+    }
+
+    for (pid, name) in windows_tasklist_names() {
+        commands.entry(pid).or_insert(name);
+    }
+    for (pid, name) in windows_get_process_names() {
+        commands.entry(pid).or_insert(name);
+    }
+    commands
+}
+
+#[cfg(windows)]
+fn windows_tasklist_names() -> HashMap<u32, String> {
+    let mut names = HashMap::new();
+    let output = Command::new("tasklist")
+        .args(["/FO", "CSV", "/NH"])
+        .output();
+    let Ok(output) = output else {
+        return names;
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let fields = parse_csv_line(line);
+        if fields.len() < 2 {
+            continue;
+        }
+        let Ok(pid) = fields[1].parse::<u32>() else {
+            continue;
+        };
+        if !fields[0].trim().is_empty() {
+            names.insert(pid, fields[0].trim().to_string());
+        }
+    }
+    names
+}
+
+#[cfg(windows)]
+fn parse_csv_line(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    let mut in_quotes = false;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                fields.push(current);
+                current = String::new();
+            }
+            _ => current.push(ch),
+        }
+    }
+    fields.push(current);
+    fields
+}
+
+#[cfg(windows)]
+fn windows_get_process_names() -> HashMap<u32, String> {
+    let mut names = HashMap::new();
+    let script = "Get-Process | ForEach-Object { \"$($_.Id)`t$($_.ProcessName)`t$($_.Path)\" }";
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output();
+    let Ok(output) = output else {
+        return names;
+    };
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let mut parts = line.splitn(3, '\t');
+        let Some(pid_text) = parts.next() else {
+            continue;
+        };
+        let Ok(pid) = pid_text.parse::<u32>() else {
+            continue;
+        };
+        let name = parts.next().unwrap_or("").trim();
+        let path = parts.next().unwrap_or("").trim();
+        let command = if path.is_empty() { name } else { path };
+        if !command.is_empty() {
+            names.insert(pid, command.to_string());
+        }
+    }
+    names
 }

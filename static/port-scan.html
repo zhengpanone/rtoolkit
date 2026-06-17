@@ -85,15 +85,17 @@
           <div class="result-body">
             <div class="empty" v-if="loading">正在扫描...</div>
             <div class="empty" v-else-if="!result.ports.length">运行工具后，结果会显示在这里。</div>
-            <table v-else>
+            <table class="port-table" v-else>
               <thead>
-                <tr><th style="width: 140px">端口</th><th style="width: 160px">状态</th><th>说明</th></tr>
+                <tr><th style="width: 100px">端口</th><th style="width: 130px">状态</th><th style="width: 100px">PID</th><th>命令</th><th style="width: 180px">说明</th></tr>
               </thead>
               <tbody>
                 <tr v-for="row in result.ports" :key="row.port">
-                  <td><pre>{{ row.port }}</pre></td>
+                  <td class="mono-cell">{{ row.port }}</td>
                   <td><span class="badge" :class="row.open ? 'open' : 'closed'">{{ row.open ? 'OPEN' : 'CLOSED' }}</span></td>
-                  <td>{{ row.open ? '连接成功' : '连接失败或超时' }}</td>
+                  <td class="mono-cell">{{ row.pid || '-' }}</td>
+                  <td class="command-cell" :title="row.command || ''">{{ row.command || '-' }}</td>
+                  <td>{{ row.open ? (row.pid ? '本机进程已匹配' : '远程或未匹配到进程') : '连接失败或超时' }}</td>
                 </tr>
               </tbody>
             </table>

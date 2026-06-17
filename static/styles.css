@@ -895,6 +895,37 @@ pre {
   line-height: 18px;
 }
 
+.command-cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.port-table th,
+.port-table td {
+  font-size: 13px;
+  line-height: 20px;
+  vertical-align: middle;
+}
+
+.port-table th {
+  font-size: 13px;
+}
+
+.port-table .mono-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.port-table .badge {
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .empty {
   min-height: 240px;
   display: grid;
