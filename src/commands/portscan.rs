@@ -51,9 +51,10 @@ pub struct PortScanOpts {
     output: Option<String>,
 
     #[arg(
+        value_enum,
         short = 's',
         long = "show",
-        default_value = "all",
+        default_value_t = ShowType::All,
         value_name = "TYPE",
         help = "显示类型 all | open | closed"
     )]
@@ -137,7 +138,8 @@ pub enum PortScanError {
     JoinError(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
 enum ShowType {
     All,
     Open,

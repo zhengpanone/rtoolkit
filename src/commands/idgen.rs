@@ -25,10 +25,15 @@ pub struct IdOpts {
     )]
     count: u32,
 
-    #[arg(long = "region", help = "地区, 例如 110101", required = false)]
+    #[arg(
+        short = 'r',
+        long = "region",
+        help = "地区, 例如 110101",
+        required = false
+    )]
     region: Option<String>,
 
-    #[arg(long = "birth", help = "出生日期")]
+    #[arg(short = 'b', long = "birth", help = "出生日期")]
     birth: Option<String>,
 
     #[arg(long, default_value = "1970-01-01")]
@@ -40,7 +45,7 @@ pub struct IdOpts {
     #[arg(value_enum, short = 'g', long = "gender", default_value_t = Gender::Any, help = "性别")]
     gender: Gender,
 
-    #[arg(short = 'o', long = "output.csv", help = "输出文件")]
+    #[arg(short = 'o', long = "output", help = "输出文件")]
     output: Option<String>,
 
     #[arg(value_enum, short = 't', long = "type", default_value_t = OutputType::Text, help = "输出类型")]
@@ -196,14 +201,7 @@ fn write_styled_excel_file(records: &[IdRecord], path: &str) -> Result<(), IdErr
     sheet.merge_range(0, 0, 0, 4, "身份证生成结果", &title_format)?;
     let generated_at = Local::now().format("%Y/%-m/%-d %H:%M:%S");
     let meta_text = format!("生成时间： {}    记录数： {}", generated_at, records.len());
-    sheet.merge_range(
-        1,
-        0,
-        1,
-        4,
-        &meta_text,
-        &meta_format,
-    )?;
+    sheet.merge_range(1, 0, 1, 4, &meta_text, &meta_format)?;
 
     let headers = ["姓名", "身份证号", "生日", "性别", "地址"];
     for (col, header) in headers.iter().enumerate() {
@@ -216,7 +214,12 @@ fn write_styled_excel_file(records: &[IdRecord], path: &str) -> Result<(), IdErr
         sheet.write_string_with_format(row, 0, &record.name, &center_format)?;
         sheet.write_string_with_format(row, 1, &record.id_number, &id_format)?;
         sheet.write_string_with_format(row, 2, &record.birthday, &center_format)?;
-        sheet.write_string_with_format(row, 3, convert_gender_name(&record.gender), &center_format)?;
+        sheet.write_string_with_format(
+            row,
+            3,
+            convert_gender_name(&record.gender),
+            &center_format,
+        )?;
         sheet.write_string_with_format(row, 4, &record.address, &address_format)?;
     }
 
@@ -341,22 +344,15 @@ pub fn write_generated_ids<W: Write>(
         Some(b) if !b.trim().is_empty() => Some(parse_date(&b)?),
         _ => None,
     };
-    let region = request
-        .region
-        .filter(|value| !value.trim().is_empty());
+    let region = request.region.filter(|value| !value.trim().is_empty());
     let gender = request.gender.unwrap_or(Gender::Any);
 
     match output_type {
         OutputType::Text => {
             writeln!(writer, "姓名\t性别\t身份证号\t生日\t地址")?;
             for _ in 0..count {
-                let record = generate_id(
-                    region.as_deref(),
-                    fixed_birth,
-                    min_date,
-                    max_date,
-                    gender,
-                )?;
+                let record =
+                    generate_id(region.as_deref(), fixed_birth, min_date, max_date, gender)?;
                 writeln!(
                     writer,
                     "{}\t{}\t{}\t{}\t{}",
@@ -372,13 +368,8 @@ pub fn write_generated_ids<W: Write>(
             writer.write_all(b"\xEF\xBB\xBF")?;
             writeln!(writer, "姓名,性别,身份证号,生日,地址")?;
             for _ in 0..count {
-                let record = generate_id(
-                    region.as_deref(),
-                    fixed_birth,
-                    min_date,
-                    max_date,
-                    gender,
-                )?;
+                let record =
+                    generate_id(region.as_deref(), fixed_birth, min_date, max_date, gender)?;
                 writeln!(
                     writer,
                     "{},{},{},{},{}",
@@ -393,13 +384,8 @@ pub fn write_generated_ids<W: Write>(
         OutputType::Json => {
             writer.write_all(b"[\n")?;
             for index in 0..count {
-                let record = generate_id(
-                    region.as_deref(),
-                    fixed_birth,
-                    min_date,
-                    max_date,
-                    gender,
-                )?;
+                let record =
+                    generate_id(region.as_deref(), fixed_birth, min_date, max_date, gender)?;
                 if index > 0 {
                     writer.write_all(b",\n")?;
                 }
@@ -418,7 +404,8 @@ pub fn write_generated_ids<W: Write>(
                     gender,
                 )?);
             }
-            let path = std::env::temp_dir().join(format!("rtoolkit-idgen-{}.xlsx", rng().random::<u64>()));
+            let path =
+                std::env::temp_dir().join(format!("rtoolkit-idgen-{}.xlsx", rng().random::<u64>()));
             write_excel_file(&records, path.to_string_lossy().as_ref())?;
             let bytes = std::fs::read(&path)?;
             let _ = std::fs::remove_file(path);
@@ -438,22 +425,24 @@ pub fn validate_id_download_request(
         return Err(IdError::ExcelRowLimit);
     }
 
-    let min_birth = request
-        .min_birth
-        .as_deref()
-        .unwrap_or("1970-01-01");
-    let max_birth = request
-        .max_birth
-        .as_deref()
-        .unwrap_or("2010-12-31");
+    let min_birth = request.min_birth.as_deref().unwrap_or("1970-01-01");
+    let max_birth = request.max_birth.as_deref().unwrap_or("2010-12-31");
     parse_date(min_birth)?;
     parse_date(max_birth)?;
 
-    if let Some(birth) = request.birth.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(birth) = request
+        .birth
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         parse_date(birth)?;
     }
 
-    if let Some(region) = request.region.as_deref().filter(|value| !value.trim().is_empty()) {
+    if let Some(region) = request
+        .region
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
         validate_region(region)?;
         random_region_by_code(region).ok_or(IdError::InvalidRegion)?;
     }
