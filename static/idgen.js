@@ -7,6 +7,26 @@ Vue.createApp({
       records: [],
       lastText: '',
       exportFormat: 'txt',
+      directExportFormat: 'csv',
+      copiedIdNumber: '',
+      regionsLoading: false,
+      regionOptions: {
+        provinces: [],
+        cities: [],
+        regions: []
+      },
+      selectedRegion: {
+        province: '',
+        city: '',
+        area: ''
+      },
+      addressPopover: {
+        visible: false,
+        text: '',
+        x: 0,
+        y: 0,
+        copied: false
+      },
       form: {
         count: 5,
         gender: 'any',
@@ -16,6 +36,17 @@ Vue.createApp({
         max_birth: '2010-12-31'
       }
     };
+  },
+
+  mounted: function () {
+    document.addEventListener('click', this.handleDocumentClick);
+    document.addEventListener('keydown', this.handleDocumentKeydown);
+    this.loadRegionOptions();
+  },
+
+  beforeUnmount: function () {
+    document.removeEventListener('click', this.handleDocumentClick);
+    document.removeEventListener('keydown', this.handleDocumentKeydown);
   },
 
   methods: {
@@ -52,7 +83,7 @@ Vue.createApp({
           { label: '生成数量', value: this.records.length },
           { label: '地区模式', value: this.form.region || '随机' },
           { label: '性别', value: this.genderLabel(this.form.gender) },
-          { label: '可下载', value: 'TXT / CSV / Excel / JSON' }
+          { label: '可下载', value: '4 种格式' }
         ];
         this.lastText = this.records.map(function (row) {
           return row.name + '\t' + row.id_number + '\t' + row.address;
@@ -67,6 +98,264 @@ Vue.createApp({
     copyResult: async function () {
       if (!this.lastText) return;
       await navigator.clipboard.writeText(this.lastText);
+    },
+
+    downloadGeneratedFile: async function () {
+      this.errorMessage = '';
+      if (this.directExportFormat === 'excel' && Number(this.form.count || 1) > 1048575) {
+        this.errorMessage = 'Excel 单个工作表最多支持 1048575 条数据，请选择 CSV/TEXT/JSON 或降低数量。';
+        return;
+      }
+      var query = this.directDownloadQuery();
+      var link = document.createElement('a');
+      link.href = '/api/idgen/download?' + query;
+      link.download = 'idgen-' + this.timestamp() + '.' + this.directExportExt();
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    },
+
+    directExportExt: function () {
+      if (this.directExportFormat === 'excel') return 'xlsx';
+      if (this.directExportFormat === 'json') return 'json';
+      if (this.directExportFormat === 'txt') return 'txt';
+      return 'csv';
+    },
+
+    directDownloadQuery: function () {
+      var params = [];
+      var payload = this.normalizedPayload();
+      payload.format = this.directExportFormat || 'csv';
+      Object.keys(payload).forEach(function (key) {
+        if (payload[key] !== null && payload[key] !== undefined && payload[key] !== '') {
+          params.push(encodeURIComponent(key) + '=' + encodeURIComponent(payload[key]));
+        }
+      });
+      return params.join('&');
+    },
+
+    loadRegionOptions: async function () {
+      this.regionsLoading = true;
+      try {
+        var response = await fetch('/api/regions');
+        var data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || 'load regions failed');
+        }
+        this.regionOptions.provinces = data.provinces || [];
+        this.regionOptions.cities = data.cities || [];
+        this.regionOptions.regions = data.regions || [];
+        this.syncRegionSelectorsFromCode();
+      } catch (error) {
+        this.errorMessage = error.message || String(error);
+      } finally {
+        this.regionsLoading = false;
+      }
+    },
+
+    filteredCities: function () {
+      var province = this.selectedRegion.province;
+      if (!province) return [];
+      return this.regionOptions.cities.filter(function (city) {
+        return city.provinceCode === province ||
+          city.province_code === province ||
+          city.province === province;
+      });
+    },
+
+    filteredAreas: function () {
+      var city = this.selectedRegion.city;
+      if (!city) return [];
+      return this.regionOptions.regions.filter(function (area) {
+        return area.cityCode === city ||
+          area.city_code === city ||
+          area.city === city;
+      });
+    },
+
+    selectedProvinceOption: function () {
+      var province = this.selectedRegion.province;
+      if (!province) return null;
+      return this.regionOptions.provinces.find(function (item) {
+        return item.code === province;
+      }) || null;
+    },
+
+    selectedCityOption: function () {
+      var city = this.selectedRegion.city;
+      if (!city) return null;
+      return this.regionOptions.cities.find(function (item) {
+        return item.code === city;
+      }) || null;
+    },
+
+    selectedAreaOption: function () {
+      var area = this.selectedRegion.area;
+      if (!area) return null;
+      return this.regionOptions.regions.find(function (item) {
+        return item.code === area;
+      }) || null;
+    },
+
+    onProvinceChange: function () {
+      this.selectedRegion.city = '';
+      this.selectedRegion.area = '';
+      this.form.region = this.selectedRegion.province || '';
+    },
+
+    onCityChange: function () {
+      this.selectedRegion.area = '';
+      this.form.region = this.selectedRegion.city || this.selectedRegion.province || '';
+    },
+
+    onAreaChange: function () {
+      this.form.region = this.selectedRegion.area || '';
+    },
+
+    clearRegionSelection: function () {
+      this.form.region = '';
+      this.selectedRegion.province = '';
+      this.selectedRegion.city = '';
+      this.selectedRegion.area = '';
+    },
+
+    clearBirthSelection: function () {
+      this.form.birth = '';
+      this.form.min_birth = '';
+      this.form.max_birth = '';
+    },
+
+    onRegionCodeInput: function () {
+      this.syncRegionSelectorsFromCode();
+    },
+
+    syncRegionSelectorsFromCode: function () {
+      var code = (this.form.region || '').trim();
+      if (!/^\d{2,6}$/.test(code)) {
+        if (!code) {
+          this.selectedRegion.province = '';
+          this.selectedRegion.city = '';
+          this.selectedRegion.area = '';
+        }
+        return;
+      }
+
+      if (code.length === 2) {
+        var matchedProvince = this.regionOptions.provinces.find(function (province) {
+          return province.code === code;
+        });
+        if (!matchedProvince) {
+          this.selectedRegion.province = '';
+          this.selectedRegion.city = '';
+          this.selectedRegion.area = '';
+          return;
+        }
+        this.selectedRegion.province = matchedProvince.code;
+        this.selectedRegion.city = '';
+        this.selectedRegion.area = '';
+        return;
+      }
+
+      if (code.length === 4) {
+        var matchedCity = this.regionOptions.cities.find(function (city) {
+          return city.code === code;
+        });
+        if (!matchedCity) {
+          this.selectedRegion.province = '';
+          this.selectedRegion.city = '';
+          this.selectedRegion.area = '';
+          return;
+        }
+        var cityProvinceCode = matchedCity.provinceCode ||
+          matchedCity.province_code ||
+          matchedCity.province;
+        this.selectedRegion.province = cityProvinceCode;
+        this.selectedRegion.city = matchedCity.code;
+        this.selectedRegion.area = '';
+        return;
+      }
+
+      if (code.length !== 6) return;
+
+      var matchedArea = this.regionOptions.regions.find(function (area) {
+        return area.code === code;
+      });
+      if (!matchedArea) {
+        this.selectedRegion.province = '';
+        this.selectedRegion.city = '';
+        this.selectedRegion.area = '';
+        return;
+      }
+
+      var cityCode = matchedArea.cityCode || matchedArea.city_code || matchedArea.city;
+      var provinceCode = matchedArea.provinceCode || matchedArea.province_code || matchedArea.province;
+      this.selectedRegion.province = provinceCode;
+      this.selectedRegion.city = cityCode;
+      this.selectedRegion.area = matchedArea.code;
+    },
+
+    copyIdNumber: async function (idNumber) {
+      if (!idNumber) return;
+      await navigator.clipboard.writeText(idNumber);
+      this.copiedIdNumber = idNumber;
+      var app = this;
+      window.setTimeout(function () {
+        if (app.copiedIdNumber === idNumber) {
+          app.copiedIdNumber = '';
+        }
+      }, 1400);
+    },
+
+    openAddressPopover: function (address, event) {
+      if (!address) return;
+      if (!event) return;
+
+      var target = event.currentTarget;
+      var rect = target.getBoundingClientRect();
+      var popoverWidth = Math.min(520, window.innerWidth - 32);
+      var x = rect.left;
+      var y = rect.bottom + 8;
+      if (x + popoverWidth > window.innerWidth - 16) {
+        x = window.innerWidth - popoverWidth - 16;
+      }
+      if (y > window.innerHeight - 180) {
+        y = Math.max(16, rect.top - 160);
+      }
+
+      this.addressPopover.text = address;
+      this.addressPopover.x = Math.max(16, x);
+      this.addressPopover.y = Math.max(16, y);
+      this.addressPopover.copied = false;
+      this.addressPopover.visible = true;
+    },
+
+    closeAddressPopover: function () {
+      this.addressPopover.visible = false;
+      this.addressPopover.text = '';
+      this.addressPopover.copied = false;
+    },
+
+    copyAddress: async function () {
+      if (!this.addressPopover.text) return;
+      await navigator.clipboard.writeText(this.addressPopover.text);
+      this.addressPopover.copied = true;
+      var app = this;
+      window.setTimeout(function () {
+        app.addressPopover.copied = false;
+      }, 1400);
+    },
+
+    handleDocumentClick: function (event) {
+      if (!this.addressPopover.visible) return;
+      if (event.target.closest('.address-popover')) return;
+      if (event.target.closest('.address-button')) return;
+      this.closeAddressPopover();
+    },
+
+    handleDocumentKeydown: function (event) {
+      if (event.key === 'Escape') {
+        this.closeAddressPopover();
+      }
     },
 
     downloadResult: function () {

@@ -53,7 +53,7 @@
             <div class="grid-2">
               <div class="field">
                 <label for="idCount">数量</label>
-                <input id="idCount" v-model.number="form.count" type="number" min="1" max="200">
+                <input id="idCount" v-model.number="form.count" type="number" min="1" max="10000000">
               </div>
               <div class="field">
                 <label for="idGender">性别</label>
@@ -66,10 +66,66 @@
             </div>
             <div class="field">
               <label for="idRegion">地区代码</label>
-              <input id="idRegion" v-model.trim="form.region" placeholder="例如 110101">
+              <input
+                id="idRegion"
+                v-model.trim="form.region"
+                inputmode="numeric"
+                maxlength="6"
+                placeholder="支持 2/4/6 位：11、1101、110101"
+                @input="onRegionCodeInput"
+                @change="onRegionCodeInput"
+              >
             </div>
             <div class="field">
-              <label for="idBirth">固定生日</label>
+              <div class="field-label-row">
+                <label>地区选择</label>
+                <button
+                  class="text-action"
+                  type="button"
+                  :disabled="!form.region && !selectedRegion.province && !selectedRegion.city && !selectedRegion.area"
+                  @click="clearRegionSelection"
+                >
+                  一键清除
+                </button>
+              </div>
+              <div class="region-picker">
+                <select v-model="selectedRegion.province" :disabled="regionsLoading" @change="onProvinceChange">
+                  <option value="">省份</option>
+                  <option v-for="province in regionOptions.provinces" :key="province.code" :value="province.code">
+                    {{ province.name }} {{ province.code }}
+                  </option>
+                </select>
+                <select v-model="selectedRegion.city" :disabled="!selectedRegion.province || regionsLoading" @change="onCityChange">
+                  <option value="">城市</option>
+                  <option v-for="city in filteredCities()" :key="city.code" :value="city.code">
+                    {{ city.name }} {{ city.code }}
+                  </option>
+                </select>
+                <select v-model="selectedRegion.area" :disabled="!selectedRegion.city || regionsLoading" @change="onAreaChange">
+                  <option value="">区县</option>
+                  <option v-for="area in filteredAreas()" :key="area.code" :value="area.code">
+                    {{ area.name }} {{ area.code }}
+                  </option>
+                </select>
+              </div>
+              <div class="region-code-hints" v-if="selectedRegion.province || selectedRegion.city || selectedRegion.area">
+                <span v-if="selectedProvinceOption()">省：{{ selectedProvinceOption().name }} {{ selectedProvinceOption().code }}</span>
+                <span v-if="selectedCityOption()">市：{{ selectedCityOption().name }} {{ selectedCityOption().code }}</span>
+                <span v-if="selectedAreaOption()">区县：{{ selectedAreaOption().name }} {{ selectedAreaOption().code }}</span>
+              </div>
+            </div>
+            <div class="field">
+              <div class="field-label-row">
+                <label for="idBirth">固定生日</label>
+                <button
+                  class="text-action"
+                  type="button"
+                  :disabled="!form.birth && !form.min_birth && !form.max_birth"
+                  @click="clearBirthSelection"
+                >
+                  一键清除
+                </button>
+              </div>
               <input id="idBirth" v-model.trim="form.birth" placeholder="例如 1990-05-20 或 19900520">
             </div>
             <div class="grid-2">
@@ -85,6 +141,17 @@
             <div class="actions">
               <button class="primary" type="submit" :disabled="loading">{{ loading ? '生成中...' : '生成' }}</button>
               <button class="secondary" type="button" :disabled="!lastText" @click="copyResult">复制结果</button>
+              <div class="direct-download">
+                <select v-model="directExportFormat" :disabled="loading" aria-label="直接下载格式">
+                  <option value="txt">TEXT</option>
+                  <option value="csv">CSV</option>
+                  <option value="excel">Excel</option>
+                  <option value="json">JSON</option>
+                </select>
+                <button class="secondary" type="button" :disabled="loading" @click="downloadGeneratedFile">
+                  直接下载
+                </button>
+              </div>
             </div>
           </form>
         </section>
@@ -116,16 +183,39 @@
             <div class="empty" v-if="loading">正在生成...</div>
             <div class="empty" v-else-if="!records.length">运行工具后，结果会显示在这里。</div>
             <table v-else>
+              <colgroup>
+                <col class="name-col">
+                <col class="id-col">
+                <col class="birth-col">
+                <col class="gender-col">
+                <col class="address-col">
+              </colgroup>
               <thead>
                 <tr><th>姓名</th><th>身份证号</th><th>生日</th><th>性别</th><th>地址</th></tr>
               </thead>
               <tbody>
                 <tr v-for="row in records" :key="row.id_number">
                   <td>{{ row.name }}</td>
-                  <td><span class="id-number">{{ row.id_number }}</span></td>
+                  <td class="id-number-td">
+                    <div class="id-number-cell">
+                      <span class="id-number">{{ row.id_number }}</span>
+                      <button class="inline-copy" type="button" @click="copyIdNumber(row.id_number)">
+                        {{ copiedIdNumber === row.id_number ? '已复制' : '复制' }}
+                      </button>
+                    </div>
+                  </td>
                   <td>{{ row.birthday }}</td>
                   <td>{{ genderLabel(row.gender) }}</td>
-                  <td>{{ row.address }}</td>
+                  <td class="address-cell">
+                    <button
+                      class="address-button"
+                      type="button"
+                      @click.stop="openAddressPopover(row.address, $event)"
+                    >
+                      <span class="address-text">{{ row.address }}</span>
+                      <span class="address-view">查看</span>
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -133,6 +223,23 @@
         </section>
       </div>
     </main>
+
+    <div
+      class="address-popover"
+      v-if="addressPopover.visible"
+      :style="{ left: addressPopover.x + 'px', top: addressPopover.y + 'px' }"
+    >
+      <div class="address-popover-head">
+        <strong>完整地址</strong>
+        <button type="button" class="icon-button" @click="closeAddressPopover" aria-label="关闭地址详情">×</button>
+      </div>
+      <p>{{ addressPopover.text }}</p>
+      <div class="address-popover-actions">
+        <button type="button" class="secondary compact-button" @click="copyAddress">
+          {{ addressPopover.copied ? '已复制' : '复制地址' }}
+        </button>
+      </div>
+    </div>
   </div>
 
   <script src="/idgen.js"></script>

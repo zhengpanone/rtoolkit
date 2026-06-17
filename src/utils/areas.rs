@@ -1,7 +1,7 @@
 use std::{collections::HashMap,  sync::OnceLock};
 
 use rand::{rng, Rng};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 // 在编译时嵌入CSV文件内容
@@ -10,7 +10,7 @@ const CITIES_CSV: &str = include_str!("../../data/cities.csv");
 const AREAS_CSV: &str = include_str!("../../data/areas.csv");
 
 // 区
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Area {
     // code,name,cityCode,provinceCode
     pub code: String,
@@ -22,7 +22,7 @@ pub struct Area {
 }
 
 // 市
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct City {
     // code,name,provinceCode
     pub code: String,
@@ -32,7 +32,7 @@ pub struct City {
 }
 
 // 省
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Province {
     // code,name,provinceCode
     pub code: String,
@@ -315,6 +315,20 @@ pub fn random_area() -> String {
         .unwrap_or_else(|| "110101".to_string())
 }
 
+pub fn random_region_by_code(code: &str) -> Option<String> {
+    let cache = get_area_cache();
+    match code.len() {
+        2 => cache
+            .random_region_in_province(code)
+            .map(|region| region.code.clone()),
+        4 => cache
+            .random_region_in_city(code)
+            .map(|region| region.code.clone()),
+        6 => cache.get_region(code).map(|region| region.code.clone()),
+        _ => None,
+    }
+}
+
 // 随机获取省份
 pub fn random_province() -> Option<Province> {
     get_area_cache().random_province().cloned()
@@ -323,6 +337,18 @@ pub fn random_province() -> Option<Province> {
 // 随机获取城市
 pub fn random_city() -> Option<City> {
     get_area_cache().random_city().cloned()
+}
+
+pub fn all_provinces() -> Vec<Province> {
+    get_area_cache().get_provinces().to_vec()
+}
+
+pub fn all_cities() -> Vec<City> {
+    get_area_cache().get_cities().to_vec()
+}
+
+pub fn all_regions() -> Vec<Area> {
+    get_area_cache().get_areas().to_vec()
 }
 
 // 随机获取区域完整信息

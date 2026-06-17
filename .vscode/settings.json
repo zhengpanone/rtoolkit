@@ -3,7 +3,9 @@
     "Datelike",
     "Idgen",
     "jsonfmt",
+    "lopdf",
     "portscan",
-    "rtoolkit"
+    "rtoolkit",
+    "ttype"
   ]
 }

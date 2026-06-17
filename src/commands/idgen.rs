@@ -3,10 +3,16 @@ use fake::faker::name::raw::*;
 use fake::locales::*;
 use fake::Fake;
 use rand::{rng, Rng};
+
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Write;
 
 use crate::utils::areas::get_full_area_info_str;
-use crate::utils::areas::random_area;
+use crate::utils::areas::{random_area, random_region_by_code};
+
+pub const MAX_IDGEN_COUNT: u32 = 10_000_000;
+pub const MAX_EXCEL_ROWS: u32 = 1_048_575;
 
 #[derive(clap::Args)]
 pub struct IdOpts {
@@ -18,16 +24,27 @@ pub struct IdOpts {
         long_help = "生成身份证号数量"
     )]
     count: u32,
+
     #[arg(long = "region", help = "地区, 例如 110101", required = false)]
     region: Option<String>,
+
     #[arg(long = "birth", help = "出生日期")]
     birth: Option<String>,
+
     #[arg(long, default_value = "1970-01-01")]
     min_birth: String,
+
     #[arg(long, default_value = "2010-12-31")]
     max_birth: String,
-    #[arg(value_enum, long = "gender", default_value_t = Gender::Any, help = "性别")]
+
+    #[arg(value_enum, short = 'g', long = "gender", default_value_t = Gender::Any, help = "性别")]
     gender: Gender,
+
+    #[arg(short = 'o', long = "output.csv", help = "输出文件")]
+    output: Option<String>,
+
+    #[arg(value_enum, short = 't', long = "type", default_value_t = OutputType::Text, help = "输出类型")]
+    output_type: OutputType,
 }
 
 pub fn run_gen_id(opts: IdOpts) -> Result<(), IdError> {
@@ -40,13 +57,172 @@ pub fn run_gen_id(opts: IdOpts) -> Result<(), IdError> {
         gender: Some(opts.gender),
     })?;
 
+    // 根据输出类型输出不同格式
+    if let Some(output) = &opts.output {
+        write_to_file(&records, output, &opts.output_type)?;
+    } else {
+        print_console(&records);
+    }
+    Ok(())
+}
+
+fn print_console(records: &[IdRecord]) {
     for record in records {
         println!(
-            "姓名: {}\t 身份证号: {}\t 地址:{}",
-            record.name, record.id_number, record.address
+            "姓名: {}\t 性别: {}\t 身份证号: {}\t 地址:{}",
+            record.name,
+            convert_gender_name(&record.gender),
+            record.id_number,
+            record.address
         );
     }
+}
 
+fn write_to_file(
+    records: &[IdRecord],
+    path: &str,
+    output_type: &OutputType,
+) -> Result<(), IdError> {
+    let mut file = File::create(path)?;
+    match output_type {
+        OutputType::Text => {
+            writeln!(file, "姓名\t性别\t身份证号\t地址")?;
+            for record in records {
+                writeln!(
+                    file,
+                    "{}",
+                    format!(
+                        "{}\t{}\t{}\t{}",
+                        record.name,
+                        convert_gender_name(&record.gender),
+                        record.id_number,
+                        record.address
+                    )
+                )?
+            }
+        }
+        OutputType::Csv => {
+            writeln!(file, "姓名,性别,身份证号,地址")?;
+            for record in records {
+                writeln!(
+                    file,
+                    "{},{},{},{}",
+                    record.name,
+                    convert_gender_name(&record.gender),
+                    record.id_number,
+                    record.address
+                )?;
+            }
+        }
+        OutputType::Json => {
+            let json = serde_json::to_string_pretty(records)?;
+            file.write_all(json.as_bytes())?;
+        }
+        OutputType::Excel => {
+            write_excel_file(records, path)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_excel_file(records: &[IdRecord], path: &str) -> Result<(), IdError> {
+    write_styled_excel_file(records, path)
+}
+
+fn write_styled_excel_file(records: &[IdRecord], path: &str) -> Result<(), IdError> {
+    use chrono::Local;
+    use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
+
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet();
+    let border_color = Color::RGB(0xC8D3E1);
+
+    let title_format = Format::new()
+        .set_bold()
+        .set_font_name("Microsoft YaHei")
+        .set_font_size(18)
+        .set_font_color(Color::RGB(0x002F6C))
+        .set_background_color(Color::RGB(0xEAF4FB))
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter);
+    let meta_format = Format::new()
+        .set_font_name("Microsoft YaHei")
+        .set_font_size(12)
+        .set_align(FormatAlign::Right)
+        .set_align(FormatAlign::VerticalCenter);
+    let header_format = Format::new()
+        .set_bold()
+        .set_font_name("Microsoft YaHei")
+        .set_font_size(12)
+        .set_background_color(Color::RGB(0x1F4E79))
+        .set_font_color(Color::White)
+        .set_border(FormatBorder::Thin)
+        .set_border_color(border_color)
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter);
+    let center_format = Format::new()
+        .set_font_name("Microsoft YaHei")
+        .set_font_size(11)
+        .set_border(FormatBorder::Thin)
+        .set_border_color(border_color)
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter);
+    let id_format = Format::new()
+        .set_font_name("Consolas")
+        .set_font_size(11)
+        .set_font_color(Color::RGB(0x0000FF))
+        .set_num_format("@")
+        .set_border(FormatBorder::Thin)
+        .set_border_color(border_color)
+        .set_align(FormatAlign::Center)
+        .set_align(FormatAlign::VerticalCenter);
+    let address_format = Format::new()
+        .set_font_name("Microsoft YaHei")
+        .set_font_size(11)
+        .set_border(FormatBorder::Thin)
+        .set_border_color(border_color)
+        .set_align(FormatAlign::Left)
+        .set_align(FormatAlign::VerticalCenter);
+
+    sheet.set_column_width(0, 14)?;
+    sheet.set_column_width(1, 28)?;
+    sheet.set_column_width(2, 16)?;
+    sheet.set_column_width(3, 12)?;
+    sheet.set_column_width(4, 46)?;
+    sheet.set_row_height(0, 32)?;
+    sheet.set_row_height(1, 24)?;
+    sheet.set_row_height(2, 28)?;
+
+    sheet.merge_range(0, 0, 0, 4, "身份证生成结果", &title_format)?;
+    let generated_at = Local::now().format("%Y/%-m/%-d %H:%M:%S");
+    let meta_text = format!("生成时间： {}    记录数： {}", generated_at, records.len());
+    sheet.merge_range(
+        1,
+        0,
+        1,
+        4,
+        &meta_text,
+        &meta_format,
+    )?;
+
+    let headers = ["姓名", "身份证号", "生日", "性别", "地址"];
+    for (col, header) in headers.iter().enumerate() {
+        sheet.write_string_with_format(2, col as u16, *header, &header_format)?;
+    }
+
+    for (index, record) in records.iter().enumerate() {
+        let row = (index + 3) as u32;
+        sheet.set_row_height(row, 24)?;
+        sheet.write_string_with_format(row, 0, &record.name, &center_format)?;
+        sheet.write_string_with_format(row, 1, &record.id_number, &id_format)?;
+        sheet.write_string_with_format(row, 2, &record.birthday, &center_format)?;
+        sheet.write_string_with_format(row, 3, convert_gender_name(&record.gender), &center_format)?;
+        sheet.write_string_with_format(row, 4, &record.address, &address_format)?;
+    }
+
+    sheet.set_freeze_panes(3, 0)?;
+    sheet.autofilter(2, 0, records.len() as u32 + 2, 4)?;
+    workbook.save(path)?;
     Ok(())
 }
 
@@ -54,8 +230,16 @@ pub fn run_gen_id(opts: IdOpts) -> Result<(), IdError> {
 pub enum IdError {
     #[error("invalid date: {0}")]
     InvalidDate(String),
-    #[error("region must be 6 digits")]
+    #[error("region must be 2, 4, or 6 digits")]
     InvalidRegion,
+    #[error("excel export supports at most 1048575 records")]
+    ExcelRowLimit,
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error(transparent)]
+    Excel(#[from] rust_xlsxwriter::XlsxError),
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, Deserialize, Serialize)]
@@ -64,6 +248,23 @@ pub enum Gender {
     Any,
     Male,
     Female,
+}
+
+fn convert_gender_name(gender: &str) -> &'static str {
+    if gender.eq("male") {
+        "男"
+    } else {
+        "女"
+    }
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OutputType {
+    Text,
+    Csv,
+    Json,
+    Excel,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,7 +288,7 @@ pub struct IdRecord {
 }
 
 pub fn generate_ids(request: IdGenerateRequest) -> Result<Vec<IdRecord>, IdError> {
-    let count = request.count.unwrap_or(1).clamp(1, 200);
+    let count = request.count.unwrap_or(1).clamp(1, MAX_IDGEN_COUNT);
     let min_birth = request
         .min_birth
         .unwrap_or_else(|| "1970-01-01".to_string());
@@ -100,15 +301,164 @@ pub fn generate_ids(request: IdGenerateRequest) -> Result<Vec<IdRecord>, IdError
         Some(b) if !b.trim().is_empty() => Some(parse_date(&b)?),
         _ => None,
     };
-    let region = request.region.as_deref().filter(|value| !value.trim().is_empty());
+    let region = request
+        .region
+        .as_deref()
+        .filter(|value| !value.trim().is_empty());
     let gender = request.gender.unwrap_or(Gender::Any);
 
     let mut records = Vec::with_capacity(count as usize);
     for _ in 0..count {
-        records.push(generate_id(region, fixed_birth, min_date, max_date, gender)?);
+        records.push(generate_id(
+            region,
+            fixed_birth,
+            min_date,
+            max_date,
+            gender,
+        )?);
     }
 
     Ok(records)
+}
+
+pub fn write_generated_ids<W: Write>(
+    request: IdGenerateRequest,
+    output_type: OutputType,
+    mut writer: W,
+) -> Result<u32, IdError> {
+    validate_id_download_request(&request, output_type)?;
+
+    let count = request.count.unwrap_or(1).clamp(1, MAX_IDGEN_COUNT);
+    let min_birth = request
+        .min_birth
+        .unwrap_or_else(|| "1970-01-01".to_string());
+    let max_birth = request
+        .max_birth
+        .unwrap_or_else(|| "2010-12-31".to_string());
+    let min_date = parse_date(&min_birth)?;
+    let max_date = parse_date(&max_birth)?;
+    let fixed_birth = match request.birth {
+        Some(b) if !b.trim().is_empty() => Some(parse_date(&b)?),
+        _ => None,
+    };
+    let region = request
+        .region
+        .filter(|value| !value.trim().is_empty());
+    let gender = request.gender.unwrap_or(Gender::Any);
+
+    match output_type {
+        OutputType::Text => {
+            writeln!(writer, "姓名\t性别\t身份证号\t生日\t地址")?;
+            for _ in 0..count {
+                let record = generate_id(
+                    region.as_deref(),
+                    fixed_birth,
+                    min_date,
+                    max_date,
+                    gender,
+                )?;
+                writeln!(
+                    writer,
+                    "{}\t{}\t{}\t{}\t{}",
+                    record.name,
+                    convert_gender_name(&record.gender),
+                    record.id_number,
+                    record.birthday,
+                    record.address
+                )?;
+            }
+        }
+        OutputType::Csv => {
+            writer.write_all(b"\xEF\xBB\xBF")?;
+            writeln!(writer, "姓名,性别,身份证号,生日,地址")?;
+            for _ in 0..count {
+                let record = generate_id(
+                    region.as_deref(),
+                    fixed_birth,
+                    min_date,
+                    max_date,
+                    gender,
+                )?;
+                writeln!(
+                    writer,
+                    "{},{},{},{},{}",
+                    csv_cell(&record.name),
+                    csv_cell(convert_gender_name(&record.gender)),
+                    csv_cell(&record.id_number),
+                    csv_cell(&record.birthday),
+                    csv_cell(&record.address)
+                )?;
+            }
+        }
+        OutputType::Json => {
+            writer.write_all(b"[\n")?;
+            for index in 0..count {
+                let record = generate_id(
+                    region.as_deref(),
+                    fixed_birth,
+                    min_date,
+                    max_date,
+                    gender,
+                )?;
+                if index > 0 {
+                    writer.write_all(b",\n")?;
+                }
+                serde_json::to_writer_pretty(&mut writer, &record)?;
+            }
+            writer.write_all(b"\n]\n")?;
+        }
+        OutputType::Excel => {
+            let mut records = Vec::with_capacity(count as usize);
+            for _ in 0..count {
+                records.push(generate_id(
+                    region.as_deref(),
+                    fixed_birth,
+                    min_date,
+                    max_date,
+                    gender,
+                )?);
+            }
+            let path = std::env::temp_dir().join(format!("rtoolkit-idgen-{}.xlsx", rng().random::<u64>()));
+            write_excel_file(&records, path.to_string_lossy().as_ref())?;
+            let bytes = std::fs::read(&path)?;
+            let _ = std::fs::remove_file(path);
+            writer.write_all(&bytes)?;
+        }
+    }
+
+    Ok(count)
+}
+
+pub fn validate_id_download_request(
+    request: &IdGenerateRequest,
+    output_type: OutputType,
+) -> Result<(), IdError> {
+    let count = request.count.unwrap_or(1).clamp(1, MAX_IDGEN_COUNT);
+    if matches!(output_type, OutputType::Excel) && count > MAX_EXCEL_ROWS {
+        return Err(IdError::ExcelRowLimit);
+    }
+
+    let min_birth = request
+        .min_birth
+        .as_deref()
+        .unwrap_or("1970-01-01");
+    let max_birth = request
+        .max_birth
+        .as_deref()
+        .unwrap_or("2010-12-31");
+    parse_date(min_birth)?;
+    parse_date(max_birth)?;
+
+    if let Some(birth) = request.birth.as_deref().filter(|value| !value.trim().is_empty()) {
+        parse_date(birth)?;
+    }
+
+    if let Some(region) = request.region.as_deref().filter(|value| !value.trim().is_empty()) {
+        validate_region(region)?;
+        random_region_by_code(region).ok_or(IdError::InvalidRegion)?;
+    }
+
+    Ok(())
 }
 
 fn generate_id(
@@ -121,7 +471,7 @@ fn generate_id(
     let code6 = match region {
         Some(r) => {
             validate_region(r)?;
-            r.to_string()
+            random_region_by_code(r).ok_or(IdError::InvalidRegion)?
         }
         None => random_area(),
     };
@@ -154,10 +504,18 @@ fn generate_id(
 }
 
 fn validate_region(code: &str) -> Result<(), IdError> {
-    if code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()) {
+    if matches!(code.len(), 2 | 4 | 6) && code.chars().all(|c| c.is_ascii_digit()) {
         Ok(())
     } else {
         Err(IdError::InvalidRegion)
+    }
+}
+
+fn csv_cell(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
     }
 }
 

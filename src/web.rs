@@ -3,9 +3,12 @@ use std::net::{TcpListener, TcpStream};
 
 use serde::{Deserialize, Serialize};
 
-use crate::commands::idgen::{generate_ids, IdGenerateRequest};
+use crate::commands::idgen::{
+    generate_ids, validate_id_download_request, write_generated_ids, IdGenerateRequest, OutputType,
+};
 use crate::commands::jsonfmt::{format_json_text, MAX_INDENT};
 use crate::commands::portscan::{scan_ports, PortScanRequest};
+use crate::utils::areas::{all_cities, all_provinces, all_regions, Area, City, Province};
 
 const INDEX_HTML: &str = include_str!("../static/index.html");
 const IDGEN_HTML: &str = include_str!("../static/idgen.html");
@@ -49,6 +52,20 @@ struct JsonFmtResponse {
     lines: usize,
 }
 
+#[derive(Serialize)]
+struct RegionOptionsResponse {
+    provinces: Vec<Province>,
+    cities: Vec<City>,
+    regions: Vec<Area>,
+}
+
+#[derive(Deserialize)]
+struct IdDownloadRequest {
+    #[serde(flatten)]
+    params: IdGenerateRequest,
+    format: Option<OutputType>,
+}
+
 pub fn run_web(opts: WebOpts) -> anyhow::Result<()> {
     let addr = format!("{}:{}", opts.host, opts.port);
     let listener = TcpListener::bind(&addr)?;
@@ -89,7 +106,7 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
     }
 
     let method = parts[0];
-    let path = parts[1];
+    let target = parts[1];
     let mut content_length = 0usize;
     loop {
         let mut line = String::new();
@@ -110,7 +127,7 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         reader.read_exact(&mut body)?;
     }
 
-    let path = path.split('?').next().unwrap_or(path);
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
     match (method, path) {
         ("GET", "/") | ("GET", "/index.html") => write_html(&mut stream, INDEX_HTML),
@@ -138,10 +155,57 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         ("GET", "/api/health") => {
             write_json(&mut stream, 200, &serde_json::json!({ "status": "ok" }))
         }
+        ("GET", "/api/regions") => write_json(
+            &mut stream,
+            200,
+            &RegionOptionsResponse {
+                provinces: all_provinces(),
+                cities: all_cities(),
+                regions: all_regions(),
+            },
+        ),
         ("POST", "/api/idgen") => {
             let payload: IdGenerateRequest = serde_json::from_slice(&body)?;
             match generate_ids(payload) {
                 Ok(records) => write_json(&mut stream, 200, &IdGenerateResponse { records }),
+                Err(error) => write_json(
+                    &mut stream,
+                    400,
+                    &ErrorResponse {
+                        error: error.to_string(),
+                    },
+                ),
+            }
+        }
+        ("POST", "/api/idgen/download") => {
+            let payload: IdDownloadRequest = serde_json::from_slice(&body)?;
+            let format = payload.format.unwrap_or(OutputType::Text);
+            match validate_id_download_request(&payload.params, format) {
+                Ok(_) => {
+                    write_download_header(&mut stream, format)?;
+                    write_generated_ids(payload.params, format, &mut stream)?;
+                    stream.flush()?;
+                    Ok(())
+                }
+                Err(error) => write_json(
+                    &mut stream,
+                    400,
+                    &ErrorResponse {
+                        error: error.to_string(),
+                    },
+                ),
+            }
+        }
+        ("GET", "/api/idgen/download") => {
+            let payload = parse_id_download_query(query);
+            let format = payload.format.unwrap_or(OutputType::Text);
+            match validate_id_download_request(&payload.params, format) {
+                Ok(_) => {
+                    write_download_header(&mut stream, format)?;
+                    write_generated_ids(payload.params, format, &mut stream)?;
+                    stream.flush()?;
+                    Ok(())
+                }
                 Err(error) => write_json(
                     &mut stream,
                     400,
@@ -214,9 +278,99 @@ fn write_text(stream: &mut TcpStream, content_type: &str, body: &str) -> anyhow:
     write_response(stream, 200, content_type, body.as_bytes())
 }
 
+fn parse_id_download_query(query: &str) -> IdDownloadRequest {
+    let mut request = IdGenerateRequest {
+        count: None,
+        region: None,
+        birth: None,
+        min_birth: None,
+        max_birth: None,
+        gender: None,
+    };
+    let mut format = None;
+
+    for pair in query.split('&').filter(|item| !item.is_empty()) {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let value = url_decode(value);
+        match key {
+            "count" => request.count = value.parse().ok(),
+            "region" => request.region = non_empty(value),
+            "birth" => request.birth = non_empty(value),
+            "min_birth" => request.min_birth = non_empty(value),
+            "max_birth" => request.max_birth = non_empty(value),
+            "gender" => request.gender = serde_json::from_str(&format!("\"{}\"", value)).ok(),
+            "format" => format = serde_json::from_str(&format!("\"{}\"", value)).ok(),
+            _ => {}
+        }
+    }
+
+    IdDownloadRequest {
+        params: request,
+        format,
+    }
+}
+
+fn non_empty(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn url_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                output.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hex = &value[index + 1..index + 3];
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    output.push(byte);
+                    index += 3;
+                } else {
+                    output.push(bytes[index]);
+                    index += 1;
+                }
+            }
+            byte => {
+                output.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&output).into_owned()
+}
+
 fn write_json<T: Serialize>(stream: &mut TcpStream, status: u16, value: &T) -> anyhow::Result<()> {
     let body = serde_json::to_vec(value)?;
     write_response(stream, status, "application/json; charset=utf-8", &body)
+}
+
+fn write_download_header(stream: &mut TcpStream, format: OutputType) -> anyhow::Result<()> {
+    let (content_type, ext) = match format {
+        OutputType::Text => ("text/plain; charset=utf-8", "txt"),
+        OutputType::Csv => ("text/csv; charset=utf-8", "csv"),
+        OutputType::Json => ("application/json; charset=utf-8", "json"),
+        OutputType::Excel => (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xlsx",
+        ),
+    };
+    let filename = format!("idgen.{}", ext);
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Disposition: attachment; filename=\"{}\"\r\nConnection: close\r\n\r\n",
+        content_type,
+        filename
+    )?;
+    stream.flush()?;
+    Ok(())
 }
 
 fn write_response(

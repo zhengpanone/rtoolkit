@@ -343,7 +343,7 @@ Content-Type: application/json
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `count` | number | 生成数量，范围 1-200 |
+| `count` | number | 生成数量，范围 1-10000000 |
 | `region` | string | 可选，6 位地区代码 |
 | `birth` | string | 可选，固定出生日期 |
 | `min_birth` | string | 可选，随机生日最小值 |
