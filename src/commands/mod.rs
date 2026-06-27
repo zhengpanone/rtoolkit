@@ -11,6 +11,7 @@ use crate::web::{run_web, WebOpts};
 
 // 公共 Command trait + 注册函数
 pub mod idgen;
+pub mod imagetool;
 pub mod jsonfmt;
 pub mod pdf;
 pub mod portscan;
@@ -21,6 +22,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
+
 #[derive(Subcommand)]
 enum Commands {
     #[command(about = "生成中国身份证号")]
@@ -44,6 +46,8 @@ enum Commands {
         #[command(flatten)]
         opts: PdfOpts,
     },
+    #[command(name = "imgtool", about = "图片处理工具")]
+    Imagetool(imagetool::ImageTool),
     #[command(about = "启动本地 Web 工作台")]
     Web {
         #[command(flatten)]
@@ -58,6 +62,7 @@ pub fn build_cli() -> Result<()> {
         Commands::PortScan { opts } => run_port_scan(opts)?,
         Commands::JsonFmt { opts } => run_json_fmt(opts)?,
         Commands::Pdf { opts } => run_pdf(opts)?,
+        Commands::Imagetool(tool) => tool.run()?,
         Commands::Web { opts } => run_web(opts)?,
     };
     Ok(())
