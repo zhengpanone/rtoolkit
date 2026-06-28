@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: 创建 Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: 创建 Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
+  build:
+    name: 编译 ${{ matrix.target }}
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            suffix: linux-aarch64
+          # macOS
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            suffix: macos-aarch64
+          # Windows
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: windows-x86_64
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 安装交叉编译依赖 (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: 编译
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: 打包 (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czf rtoolkit-${{ matrix.suffix }}.tar.gz rtoolkit
+          shasum -a 256 rtoolkit-${{ matrix.suffix }}.tar.gz > rtoolkit-${{ matrix.suffix }}.tar.gz.sha256
+
+      - name: 打包 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a rtoolkit-${{ matrix.suffix }}.zip rtoolkit.exe
+          certutil -hashfile rtoolkit-${{ matrix.suffix }}.zip SHA256 > rtoolkit-${{ matrix.suffix }}.zip.sha256
+
+      - name: 上传到 Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: target/${{ matrix.target }}/release/rtoolkit-${{ matrix.suffix }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
+          asset_name: rtoolkit-${{ matrix.suffix }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
+          asset_content_type: application/octet-stream
+
+      - name: 上传校验和
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: target/${{ matrix.target }}/release/rtoolkit-${{ matrix.suffix }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}.sha256
+          asset_name: rtoolkit-${{ matrix.suffix }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}.sha256
+          asset_content_type: text/plain
