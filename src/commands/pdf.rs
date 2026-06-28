@@ -24,7 +24,12 @@ enum PdfCommand {
         input: PathBuf,
         #[arg(short, long, value_name = "DIR", help = "输出目录")]
         output_dir: PathBuf,
-        #[arg(long, value_name = "PREFIX", default_value = "page", help = "输出文件名前缀")]
+        #[arg(
+            long,
+            value_name = "PREFIX",
+            default_value = "page",
+            help = "输出文件名前缀"
+        )]
         prefix: String,
     },
     #[command(about = "合并多个 PDF")]
@@ -84,9 +89,8 @@ fn split_pdf(input: PathBuf, output_dir: PathBuf, prefix: String) -> Result<(), 
         ));
     }
 
-    fs::create_dir_all(&output_dir).map_err(|e| {
-        PdfError::FileSystem(format!("{}: {}", output_dir.display(), e))
-    })?;
+    fs::create_dir_all(&output_dir)
+        .map_err(|e| PdfError::FileSystem(format!("{}: {}", output_dir.display(), e)))?;
 
     let pages = load_document(&input)?.get_pages();
     if pages.is_empty() {
@@ -161,14 +165,14 @@ fn merge_documents(inputs: Vec<PathBuf>) -> Result<Document, PdfError> {
     let mut pages_object: Option<(ObjectId, Object)> = None;
 
     for (object_id, object) in documents_objects {
-        match object.type_name().unwrap_or("") {
-            "Catalog" => {
+        match object.type_name().unwrap_or(b"") {
+            b"Catalog" => {
                 catalog_object = Some((
                     catalog_object.map(|(id, _)| id).unwrap_or(object_id),
                     object,
                 ));
             }
-            "Pages" => {
+            b"Pages" => {
                 if let Ok(dictionary) = object.as_dict() {
                     let mut dictionary = dictionary.clone();
                     if let Some((_, old_object)) = &pages_object {
@@ -183,7 +187,7 @@ fn merge_documents(inputs: Vec<PathBuf>) -> Result<Document, PdfError> {
                     ));
                 }
             }
-            "Page" | "Outlines" | "Outline" => {}
+            b"Page" | b"Outlines" | b"Outline" => {}
             _ => {
                 document.objects.insert(object_id, object);
             }
@@ -216,7 +220,9 @@ fn merge_documents(inputs: Vec<PathBuf>) -> Result<Document, PdfError> {
                 .map(|id| Object::Reference(id))
                 .collect::<Vec<_>>(),
         );
-        document.objects.insert(page_id, Object::Dictionary(dictionary));
+        document
+            .objects
+            .insert(page_id, Object::Dictionary(dictionary));
     }
 
     if let Ok(dictionary) = catalog_object.as_dict() {

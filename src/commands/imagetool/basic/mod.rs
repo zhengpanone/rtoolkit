@@ -10,11 +10,11 @@ pub mod rotate;
 #[derive(Args, Debug)]
 pub struct BasicTool {
     #[command(subcommand)]
-    command: ImageCommand,
+    command: BasicCommand,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum ImageCommand {
+pub enum BasicCommand {
     #[command(about = "图片压缩")]
     Compress(compress::CompressArgs),
     #[command(about = "图片转换")]
@@ -32,27 +32,26 @@ pub enum ImageCommand {
 impl BasicTool {
     pub fn run(self) -> Result<(), BasicError> {
         match self.command {
-            ImageCommand::Compress(args) => {
+            BasicCommand::Compress(args) => {
                 args.run()?;
                 Ok(())
             }
-            ImageCommand::Convert(args) => {
+            BasicCommand::Convert(args) => {
                 args.run()?;
                 Ok(())
             }
-            ImageCommand::Crop(args) => {
+            BasicCommand::Crop(args) => {
                 args.run()?;
                 Ok(())
             }
-            ImageCommand::Resize(args) => {
+            BasicCommand::Resize(args) => {
                 args.run()?;
                 Ok(())
             }
-            ImageCommand::Rotate(args) => {
+            BasicCommand::Rotate(args) => {
                 args.run()?;
                 Ok(())
             }
-           
         }
     }
 }
