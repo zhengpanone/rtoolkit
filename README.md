@@ -8,6 +8,7 @@ rtoolkit 是一个用 Rust 编写的本地工具箱，提供命令行和 Web 工
 - TCP 端口扫描
 - JSON 格式化、压缩和排序
 - PDF 信息查看、拆分和合并
+- 图片格式转换、颜色调整、滤镜和水印
 - 本地 Web 页面调用工具
 
 ## Feature
@@ -18,6 +19,7 @@ rtoolkit 是一个用 Rust 编写的本地工具箱，提供命令行和 Web 工
 - `port-scan`：扫描 TCP 端口
 - `jsonfmt`：格式化、压缩、排序 JSON
 - `pdf`：查看 PDF 信息、拆分和合并
+- `imgtool`：图片格式转换、颜色调整、滤镜和水印
 - `web`：本地 Web 工作台统一入口
 
 可继续扩展的实用 CLI：
@@ -44,7 +46,7 @@ rtoolkit 是一个用 Rust 编写的本地工具箱，提供命令行和 Web 工
 - `otp`：TOTP/HOTP 生成或校验
 - `encrypt`：本地文件加解密
 - `cert`：查看证书信息和过期时间
-- `image`：图片压缩、缩放和格式转换
+- `image`：图片压缩、缩放和格式转换 ✅ 已实现
 - `qrcode`：生成和解析二维码
 - `pdf text`：提取 PDF 文本
 - `pdf images`：提取 PDF 图片
@@ -88,6 +90,7 @@ idgen      生成中国身份证号
 port-scan  端口扫描
 jsonfmt    JSON 格式化
 pdf        PDF 处理工具
+imgtool    图片处理工具
 web        启动本地 Web 工作台
 ```
 
@@ -257,6 +260,46 @@ rtoolkit pdf merge a.pdf b.pdf c.pdf -o merged.pdf
 ```
 
 当前 PDF 命令使用纯 Rust 依赖处理文件，不需要额外安装系统命令。基础功能适合未加密或普通结构的 PDF；复杂表单、签名、加密 PDF 建议先另存为普通 PDF 后再处理。
+
+## 图片处理
+
+图片处理工具支持格式转换、颜色调整、滤镜和水印。
+
+### 格式转换
+
+```bash
+rtoolkit imgtool basic convert input.jpg output.png
+```
+
+支持的输入/输出格式：JPEG、PNG、GIF、BMP、WebP、TIFF。
+
+### 颜色调整
+
+调整亮度：
+
+```bash
+rtoolkit imgtool color brightness input.jpg output.jpg -v 1.5
+```
+
+调整对比度：
+
+```bash
+rtoolkit imgtool color contrast input.jpg output.jpg -v 1.2
+```
+
+### 滤镜
+
+```bash
+rtoolkit imgtool filter grayscale input.jpg output.jpg
+```
+
+### 水印
+
+添加文字水印：
+
+```bash
+rtoolkit imgtool watermark text input.jpg "Hello" output.jpg
+```
 
 ## Web 工作台
 
@@ -444,7 +487,18 @@ rtoolkit/
 │   │   ├── idgen.rs
 │   │   ├── jsonfmt.rs
 │   │   ├── pdf.rs
-│   │   └── portscan.rs
+│   │   ├── portscan.rs
+│   │   └── imagetool/
+│   │       ├── mod.rs
+│   │       ├── basic/
+│   │       │   ├── mod.rs
+│   │       │   └── convert.rs
+│   │       ├── color/
+│   │       │   └── mod.rs
+│   │       ├── filter/
+│   │       │   └── mod.rs
+│   │       └── watermark/
+│   │           └── mod.rs
 │   └── utils/
 │       ├── mod.rs
 │       └── areas.rs
@@ -490,6 +544,7 @@ cargo run -- pdf info input.pdf
 - rand / fake：测试数据生成
 - serde / serde_json：JSON 序列化与格式化
 - lopdf：PDF 读取、拆分和合并
+- image：图片格式转换与处理
 - Vue.js：Web 工作台前端页面
 
 ## 许可证
