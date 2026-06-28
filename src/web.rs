@@ -3,9 +3,12 @@ use std::net::{TcpListener, TcpStream};
 
 use serde::{Deserialize, Serialize};
 
+use std::io::Cursor;
+
 use crate::commands::idgen::{
     generate_ids, validate_id_download_request, write_generated_ids, IdGenerateRequest, OutputType,
 };
+use crate::commands::imagetool::basic::convert::ImageFormatArg;
 use crate::commands::jsonfmt::{format_json_text, MAX_INDENT};
 use crate::commands::portscan::{scan_ports, PortScanRequest};
 use crate::utils::areas::{all_cities, all_provinces, all_regions, Area, City, Province};
@@ -14,9 +17,11 @@ const INDEX_HTML: &str = include_str!("../static/index.html");
 const IDGEN_HTML: &str = include_str!("../static/idgen.html");
 const PORT_SCAN_HTML: &str = include_str!("../static/port-scan.html");
 const JSONFMT_HTML: &str = include_str!("../static/jsonfmt.html");
+const IMGTOOL_HTML: &str = include_str!("../static/imgtool.html");
 const IDGEN_JS: &str = include_str!("../static/idgen.js");
 const PORT_SCAN_JS: &str = include_str!("../static/port-scan.js");
 const JSONFMT_JS: &str = include_str!("../static/jsonfmt.js");
+const IMGTOOL_JS: &str = include_str!("../static/imgtool.js");
 const STYLES_CSS: &str = include_str!("../static/styles.css");
 
 #[derive(clap::Args)]
@@ -108,6 +113,7 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
     let method = parts[0];
     let target = parts[1];
     let mut content_length = 0usize;
+    let mut content_type_header = String::new();
     loop {
         let mut line = String::new();
         reader.read_line(&mut line)?;
@@ -118,6 +124,9 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
         if let Some((name, value)) = trimmed.split_once(':') {
             if name.eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse().unwrap_or(0);
+            }
+            if name.eq_ignore_ascii_case("content-type") {
+                content_type_header = value.trim().to_string();
             }
         }
     }
@@ -136,6 +145,7 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
             write_html(&mut stream, PORT_SCAN_HTML)
         }
         ("GET", "/jsonfmt") | ("GET", "/jsonfmt.html") => write_html(&mut stream, JSONFMT_HTML),
+        ("GET", "/imgtool") | ("GET", "/imgtool.html") => write_html(&mut stream, IMGTOOL_HTML),
         ("GET", "/idgen.js") => write_text(
             &mut stream,
             "application/javascript; charset=utf-8",
@@ -150,6 +160,11 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
             &mut stream,
             "application/javascript; charset=utf-8",
             JSONFMT_JS,
+        ),
+        ("GET", "/imgtool.js") => write_text(
+            &mut stream,
+            "application/javascript; charset=utf-8",
+            IMGTOOL_JS,
         ),
         ("GET", "/styles.css") => write_text(&mut stream, "text/css; charset=utf-8", STYLES_CSS),
         ("GET", "/api/health") => {
@@ -260,6 +275,9 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
                 ),
             }
         }
+        ("POST", "/api/imgtool/convert") => {
+            handle_img_convert(&mut stream, &body, &content_type_header)
+        }
         _ => write_json(
             &mut stream,
             404,
@@ -268,6 +286,242 @@ fn handle_connection(mut stream: TcpStream) -> anyhow::Result<()> {
             },
         ),
     }
+}
+
+fn handle_img_convert(
+    stream: &mut TcpStream,
+    body: &[u8],
+    content_type: &str,
+) -> anyhow::Result<()> {
+    // 从 content-type header 解析 boundary
+    let boundary = content_type
+        .split(';')
+        .find_map(|part| {
+            let part = part.trim();
+            if part.to_lowercase().starts_with("boundary=") {
+                Some(part[9..].trim_matches('"').to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    if boundary.is_empty() {
+        return write_json(
+            stream,
+            400,
+            &ErrorResponse {
+                error: "无法解析 multipart boundary".to_string(),
+            },
+        );
+    }
+
+    let (file_data, format_str, filename) =
+        match parse_multipart(body, &boundary) {
+            Ok(data) => data,
+            Err(e) => {
+                return write_json(
+                    stream,
+                    400,
+                    &ErrorResponse {
+                        error: format!("解析上传文件失败: {}", e),
+                    },
+                );
+            }
+        };
+
+    let format = match format_str.to_lowercase().as_str() {
+        "png" => ImageFormatArg::Png,
+        "jpg" | "jpeg" => ImageFormatArg::Jpg,
+        "webp" => ImageFormatArg::Webp,
+        "bmp" => ImageFormatArg::Bmp,
+        "gif" => ImageFormatArg::Gif,
+        "tiff" | "tif" => ImageFormatArg::Tiff,
+        "ico" => ImageFormatArg::Ico,
+        _ => {
+            return write_json(
+                stream,
+                400,
+                &ErrorResponse {
+                    error: format!("不支持的目标格式: {}", format_str),
+                },
+            );
+        }
+    };
+
+    // 读取并转换图片
+    let img = match image::load_from_memory(&file_data) {
+        Ok(img) => img,
+        Err(e) => {
+            return write_json(
+                stream,
+                400,
+                &ErrorResponse {
+                    error: format!("图片读取失败: {}", e),
+                },
+            );
+        }
+    };
+
+    let mut output_buf = Cursor::new(Vec::new());
+    let image_format = match format {
+        ImageFormatArg::Png => image::ImageFormat::Png,
+        ImageFormatArg::Jpg | ImageFormatArg::Jpeg => image::ImageFormat::Jpeg,
+        ImageFormatArg::Webp => image::ImageFormat::WebP,
+        ImageFormatArg::Bmp => image::ImageFormat::Bmp,
+        ImageFormatArg::Gif => image::ImageFormat::Gif,
+        ImageFormatArg::Tiff => image::ImageFormat::Tiff,
+        ImageFormatArg::Ico => image::ImageFormat::Ico,
+    };
+
+    img.write_to(&mut output_buf, image_format)
+        .map_err(|e| anyhow::anyhow!("图片写入失败: {}", e))?;
+
+    let output_data = output_buf.into_inner();
+    let output_ext = format_str.to_lowercase();
+
+    // 生成输出文件名
+    let output_name = if let Some(stem) = filename.split('.').next() {
+        format!("{}.{}", stem, output_ext)
+    } else {
+        format!("output.{}", output_ext)
+    };
+
+    let content_type_str = match output_ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "gif" => "image/gif",
+        "tiff" | "tif" => "image/tiff",
+        "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    };
+
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Disposition: attachment; filename=\"{}\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        content_type_str,
+        output_name,
+        output_data.len()
+    )?;
+    stream.write_all(&output_data)?;
+    stream.flush()?;
+
+    Ok(())
+}
+
+fn parse_multipart(
+    body: &[u8],
+    boundary: &str,
+) -> Result<(Vec<u8>, String, String), String> {
+    let delimiter = format!("--{}", boundary);
+    let delimiter_bytes = delimiter.as_bytes();
+    let end_delimiter = format!("--{}--", boundary);
+    let end_delimiter_bytes = end_delimiter.as_bytes();
+
+    let mut file_data = Vec::new();
+    let mut format_val = String::new();
+    let mut filename = String::from("image");
+
+    // 找第一个 boundary
+    let first_boundary = match find_bytes(body, delimiter_bytes) {
+        Some(pos) => pos,
+        None => return Err("找不到 boundary".to_string()),
+    };
+
+    let mut pos = first_boundary;
+
+    // 循环处理每个 part
+    loop {
+        // 检查是否是结束 boundary
+        if pos + end_delimiter_bytes.len() <= body.len()
+            && &body[pos..pos + end_delimiter_bytes.len()] == end_delimiter_bytes
+        {
+            break;
+        }
+        // 跳过 boundary 行
+        pos = match find_bytes(&body[pos..], b"\r\n") {
+            Some(nl) => pos + nl + 2,
+            None => break,
+        };
+
+        // 解析 headers
+        let headers_end = match find_bytes(&body[pos..], b"\r\n\r\n") {
+            Some(end) => pos + end,
+            None => break,
+        };
+        let headers_raw = &body[pos..headers_end];
+        let headers_str = String::from_utf8_lossy(headers_raw);
+
+        // 解析 name 和 filename
+        let mut current_name = String::new();
+        let mut current_filename = String::new();
+        for line in headers_str.lines() {
+            let line_lower = line.to_lowercase();
+            if line_lower.contains("content-disposition") {
+                if let Some(name_start) = line.find("name=\"") {
+                    let after_name = &line[name_start + 6..];
+                    if let Some(name_end) = after_name.find('"') {
+                        current_name = after_name[..name_end].to_string();
+                    }
+                }
+                if let Some(fn_start) = line.find("filename=\"") {
+                    let after_fn = &line[fn_start + 10..];
+                    if let Some(fn_end) = after_fn.find('"') {
+                        current_filename = after_fn[..fn_end].to_string();
+                    }
+                }
+            }
+        }
+
+        pos = headers_end + 4; // 跳过 \r\n\r\n
+
+        // 找下一个 boundary
+        let data_end = match find_bytes(&body[pos..], delimiter_bytes) {
+            Some(end) => pos + end,
+            None => match find_bytes(&body[pos..], end_delimiter_bytes) {
+                Some(end) => pos + end,
+                None => body.len(),
+            },
+        };
+
+        // 去掉末尾的 \r\n
+        let mut data = &body[pos..data_end];
+        if data.ends_with(b"\r\n") {
+            data = &data[..data.len() - 2];
+        }
+
+        match current_name.as_str() {
+            "file" => {
+                file_data = data.to_vec();
+                if !current_filename.is_empty() {
+                    filename = current_filename;
+                }
+            }
+            "format" => {
+                format_val = String::from_utf8_lossy(data).trim().to_string();
+            }
+            _ => {}
+        }
+
+        // 移到下一个 boundary
+        pos = data_end;
+    }
+
+    if file_data.is_empty() {
+        return Err("未找到上传文件".to_string());
+    }
+    if format_val.is_empty() {
+        return Err("未指定目标格式".to_string());
+    }
+
+    Ok((file_data, format_val, filename))
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn write_html(stream: &mut TcpStream, html: &str) -> anyhow::Result<()> {

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>图片转换 - rtoolkit</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+  <div id="app" class="app" v-cloak>
+    <aside>
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>rtoolkit</h1>
+          <p>本地工具工作台</p>
+        </div>
+      </div>
+
+      <nav class="tool-list" aria-label="工具导航">
+        <a class="tool-tab" href="/idgen">
+          <span class="icon">ID</span>
+          <span><strong>身份证生成</strong><span class="hint">测试数据快速生成</span></span>
+        </a>
+        <a class="tool-tab" href="/port-scan">
+          <span class="icon">PS</span>
+          <span><strong>端口扫描</strong><span class="hint">主机端口连通性检查</span></span>
+        </a>
+        <a class="tool-tab" href="/jsonfmt">
+          <span class="icon">JS</span>
+          <span><strong>JSON 格式化</strong><span class="hint">格式化、压缩和排序</span></span>
+        </a>
+        <a class="tool-tab active" href="/imgtool">
+          <span class="icon">IM</span>
+          <span><strong>图片转换</strong><span class="hint">格式转换与批量处理</span></span>
+        </a>
+      </nav>
+    </aside>
+
+    <main class="img-page">
+      <div class="topbar">
+        <div>
+          <h2>图片转换</h2>
+          <p class="hint">上传图片文件，选择目标格式进行批量转换。</p>
+        </div>
+        <div class="status"><span class="dot"></span><span>服务运行中</span></div>
+      </div>
+
+      <div class="workspace">
+        <!-- 左侧：输入区域 -->
+        <div class="input-col">
+          <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/gif,image/tiff,image/x-icon,.ico" multiple hidden @change="onFileChange">
+          <input ref="folderInput" type="file" webkitdirectory directory multiple hidden @change="onFolderChange">
+
+          <section class="panel">
+            <div class="panel-head">
+              <strong>转换选项</strong>
+              <p class="hint">选择目标格式，支持多选</p>
+            </div>
+            <form @submit.prevent="startConvert">
+              <div class="field">
+                <label>目标格式</label>
+                <div class="format-options">
+                  <label class="format-chip" v-for="fmt in formatOptions" :key="fmt.value">
+                    <input type="checkbox" :value="fmt.value" v-model="form.formats">
+                    <span>{{ fmt.label }}</span>
+                  </label>
+                </div>
+              </div>
+              <div class="actions">
+                <button class="primary" type="submit" :disabled="loading || !files.length || !form.formats.length">
+                  {{ loading ? '转换中... (' + progress.current + '/' + progress.total + ')' : '开始转换' }}
+                </button>
+                <button class="secondary" type="button" :disabled="!files.length" @click="clearFiles">清空</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel panel-upload">
+            <div class="panel-head panel-head-row">
+              <div>
+                <strong>上传文件</strong>
+                <p class="hint">支持 PNG、JPG、WebP、BMP、GIF、TIFF、ICO</p>
+              </div>
+              <span class="mode-pill" v-if="files.length">{{ files.length }} 个文件</span>
+            </div>
+
+            <div class="upload-zone" :class="{ dragging: dragOver }"
+              @dragover.prevent="dragOver = true"
+              @dragleave.prevent="dragOver = false"
+              @drop.prevent="onDrop"
+            >
+              <div class="upload-body">
+                <div class="upload-empty" v-if="!files.length">
+                  <div class="upload-btns">
+                    <button class="primary compact-button" type="button" @click.stop="triggerFileInput">选择文件</button>
+                    <button class="secondary compact-button" type="button" @click.stop="triggerFolderInput">选择文件夹</button>
+                  </div>
+                  <p class="upload-desc">或将文件 / 文件夹拖拽到此区域</p>
+                </div>
+
+                <div class="upload-filled" v-else>
+                  <div class="upload-filled-top">
+                    <span class="upload-desc">拖拽文件或文件夹到此处继续添加，或</span>
+                    <button class="text-action" type="button" @click.stop="triggerFileInput">选择文件</button>
+                    <button class="text-action" type="button" @click.stop="triggerFolderInput">选择文件夹</button>
+                  </div>
+                </div>
+              </div>
+
+              <ul class="file-list" v-if="files.length">
+                <li v-for="(file, index) in files" :key="index"
+                  :class="{ 'file-active': previewFile === file }"
+                  @click="previewUpload(file)">
+                  <span class="file-name" :title="file.name">{{ file.name }}</span>
+                  <span class="file-path" v-if="file.webkitRelativePath" :title="file.webkitRelativePath">{{ file.webkitRelativePath }}</span>
+                  <span class="file-size">{{ formatSize(file.size) }}</span>
+                  <button class="file-remove" type="button" @click.stop="removeFile(index)" aria-label="移除文件">×</button>
+                </li>
+              </ul>
+            </div>
+          </section>
+        </div>
+
+        <!-- 中间：预览区域 -->
+        <section class="panel panel-preview">
+          <div class="panel-head panel-head-row">
+            <div>
+              <strong>预览</strong>
+              <p class="hint" v-if="previewUrl">点击文件或转换结果查看预览</p>
+              <p class="hint" v-else>点击左侧文件或右侧结果查看预览</p>
+            </div>
+          </div>
+          <div class="preview-body">
+            <div class="empty" v-if="!previewUrl">点击文件或转换结果进行预览</div>
+            <div class="preview-view" v-else>
+              <img :src="previewUrl" :alt="previewName" class="preview-img" @click="openLightbox">
+              <div class="preview-info">
+                <span class="preview-name" :title="previewName">{{ previewName }}</span>
+                <span class="preview-size">{{ previewSizeText }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 右侧：结果区域 -->
+        <section class="panel panel-results">
+          <div class="panel-head panel-head-row">
+            <div>
+              <strong>转换结果</strong>
+              <p class="hint">转换完成后可逐个下载或打包下载全部结果</p>
+            </div>
+            <button class="primary compact-button" type="button" :disabled="!successResults.length" @click="downloadAll">全部下载</button>
+          </div>
+          <div class="summary" v-if="metrics.length">
+            <div class="metric" v-for="item in metrics" :key="item.label">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+            </div>
+          </div>
+          <div class="error" v-if="errorMessage">{{ errorMessage }}</div>
+          <div class="result-body">
+            <div class="empty" v-if="loading">正在转换... {{ progress.current }} / {{ progress.total }}</div>
+            <div class="empty" v-else-if="!results.length">上传文件并选择目标格式后，点击「开始转换」</div>
+            <table v-else>
+              <colgroup>
+                <col style="width: auto;">
+                <col style="width: 80px;">
+                <col style="width: 90px;">
+                <col style="width: 70px;">
+              </colgroup>
+              <thead>
+                <tr><th>原文件</th><th>输出格式</th><th>输出大小</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(item, index) in results" :key="index"
+                  :class="{ 'row-error': item.error, 'row-active': previewResult === item }"
+                  @click="previewResultItem(item)">
+                  <td :title="item.source">{{ item.source }}</td>
+                  <td>{{ item.error ? '-' : item.format.toUpperCase() }}</td>
+                  <td>{{ item.error ? item.error : formatSize(item.size) }}</td>
+                  <td>
+                    <button class="inline-copy" type="button" @click.stop="downloadItem(item)" :disabled="!!item.error">下载</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- 放大预览遮罩 -->
+      <div class="lightbox" v-if="lightboxUrl" @click="closeLightbox">
+        <div class="lightbox-mask"></div>
+        <div class="lightbox-content">
+          <button class="lightbox-close" type="button" @click="closeLightbox" aria-label="关闭">×</button>
+          <img :src="lightboxUrl" :alt="lightboxName" class="lightbox-img">
+          <div class="lightbox-info">
+            <span>{{ lightboxName }}</span>
+            <span>{{ lightboxSize }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="toast" :class="toastType" v-if="toastMessage">{{ toastMessage }}</div>
+    </main>
+  </div>
+
+  <script src="/imgtool.js"></script>
+</body>
+</html>
